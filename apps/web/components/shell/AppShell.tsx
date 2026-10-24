@@ -16,11 +16,7 @@ import { config } from '@/lib/config';
 import { MockBanner } from './MockBanner';
 import { Backdrop } from './Backdrop';
 import { WalletDrawer } from '../wallet/WalletDrawer';
-
-const NAV = [
-  { href: '/', label: 'Market' },
-  { href: '/provider', label: 'Provider' },
-] as const;
+import { BurgerButton, isNavActive, MobileTabs, NAV, NavDrawer, NetworkChip } from './MobileNav';
 
 const useIsoLayoutEffect = typeof window === 'undefined' ? useEffect : useLayoutEffect;
 
@@ -29,12 +25,19 @@ const REVEAL = '.glass-panel, [data-reveal]';
 export function AppShell({ children }: { children: ReactNode }) {
   const mode = useSilicr((s) => s.mode);
   const chromeRef = useRef<HTMLDivElement>(null);
+  const bannerRef = useRef<HTMLDivElement>(null);
+  const inspectorOpen = useSilicr((s) => s.inspector.open);
   const mainRef = useRef<HTMLElement>(null);
   const pathname = usePathname();
   // The Wallet slide-over: rendered outside the header (its backdrop-filter would trap a fixed child).
   const [walletOpen, setWalletOpen] = useState(false);
   const closeWallet = useCallback(() => setWalletOpen(false), []);
   useEffect(() => setWalletOpen(false), [pathname]);
+  // The phone/tablet drawer (≤ 900px). Closes on backdrop, Esc, Close and any navigation.
+  const [navOpen, setNavOpen] = useState(false);
+  const closeNav = useCallback(() => setNavOpen(false), []);
+  const openWallet = useCallback(() => setWalletOpen(true), []);
+  useEffect(() => setNavOpen(false), [pathname]);
 
   // Panels fade-rise in on first load and on every route change, staggered. Opacity and transform only.
   useEffect(() => {
@@ -82,28 +85,61 @@ export function AppShell({ children }: { children: ReactNode }) {
   useIsoLayoutEffect(() => {
     const el = chromeRef.current;
     if (!el) return;
-    const set = () => document.documentElement.style.setProperty('--chrome-h', `${el.offsetHeight}px`);
+    const set = () => {
+      document.documentElement.style.setProperty('--chrome-h', `${el.offsetHeight}px`);
+      // ≤ 900px the inspector is a full-screen sheet that starts below the MOCK banner only.
+      document.documentElement.style.setProperty('--banner-h', `${bannerRef.current?.offsetHeight ?? 0}px`);
+    };
     set();
     const ro = new ResizeObserver(set);
     ro.observe(el);
     return () => ro.disconnect();
   }, []);
 
+  // ≤ 900px the page is taken out of the flow while the inspector sheet is open; put the scroll position back after.
+  // The position is tracked while the sheet is closed, because hiding the page clamps it to 0 before any effect runs.
+  const savedScroll = useRef(0);
+  useEffect(() => {
+    if (inspectorOpen) return;
+    const onScroll = () => {
+      if (!getState().inspector.open) savedScroll.current = window.scrollY;
+    };
+    onScroll();
+    window.addEventListener('scroll', onScroll, { passive: true });
+    return () => window.removeEventListener('scroll', onScroll);
+  }, [inspectorOpen]);
+  useIsoLayoutEffect(() => {
+    if (inspectorOpen || !savedScroll.current || !window.matchMedia('(max-width: 900px)').matches) return;
+    window.scrollTo(0, savedScroll.current);
+  }, [inspectorOpen]);
+
   return (
     <>
       <Backdrop />
       <div ref={chromeRef} className="sticky top-0 z-40">
-        {mode === 'mock' && <MockBanner />}
-        <Header walletOpen={walletOpen} setWalletOpen={setWalletOpen} />
+        <div ref={bannerRef}>{mode === 'mock' && <MockBanner />}</div>
+        <Header walletOpen={walletOpen} setWalletOpen={setWalletOpen} navOpen={navOpen} setNavOpen={setNavOpen} />
+        <MobileTabs pathname={pathname} />
       </div>
+      <NavDrawer open={navOpen} onClose={closeNav} onWallet={openWallet} />
       <WalletDrawer open={walletOpen && !pathname.startsWith('/wallet')} onClose={closeWallet} />
-      <main ref={mainRef} className="corona relative z-[1] mx-auto w-full max-w-[1600px] px-4 pb-16 pt-5 sm:px-6">{children}</main>
+      <main ref={mainRef} className={clsx('app-main corona relative z-[1] mx-auto w-full max-w-[1600px] px-4 pb-16 pt-5 sm:px-6', inspectorOpen && 'max-[900px]:hidden')}>{children}</main>
       <LeakInspector />
     </>
   );
 }
 
-function Header({ walletOpen, setWalletOpen }: { walletOpen: boolean; setWalletOpen: (fn: (v: boolean) => boolean) => void }) {
+function Header({
+  walletOpen,
+  setWalletOpen,
+  navOpen,
+  setNavOpen,
+}: {
+  walletOpen: boolean;
+  setWalletOpen: (fn: (v: boolean) => boolean) => void;
+  navOpen: boolean;
+  setNavOpen: (fn: (v: boolean) => boolean) => void;
+}) {
   const pathname = usePathname();
   const open = useSilicr((s) => s.inspector.open);
   const onWalletPage = pathname.startsWith('/wallet');
@@ -117,11 +153,11 @@ function Header({ walletOpen, setWalletOpen }: { walletOpen: boolean; setWalletO
           title={config.landingUrl ? 'Back to the Silicr site' : undefined}
         >
           <LogoMark className="size-[22px] text-white" />
-          <span className="hidden text-[18px] font-bold tracking-[-0.02em] text-white sm:inline">Silicr</span>
+          <span className="hidden text-[18px] font-bold tracking-[-0.02em] text-white sm:inline max-[900px]:inline">Silicr</span>
         </a>
-        <nav className="flex items-center gap-0.5" aria-label="Main">
+        <nav className="flex items-center gap-0.5 max-[900px]:hidden" aria-label="Main">
           {NAV.map((n) => {
-            const active = n.href === '/' ? pathname === '/' || pathname.startsWith('/rfq') : pathname.startsWith(n.href);
+            const active = isNavActive(n.href, pathname);
             return (
               <Link
                 key={n.href}
@@ -137,8 +173,11 @@ function Header({ walletOpen, setWalletOpen }: { walletOpen: boolean; setWalletO
             );
           })}
         </nav>
-        <div className="ml-auto flex items-center gap-1.5 sm:gap-2">
-          <ConnectionStatus />
+        <div className="ml-auto flex min-w-0 items-center gap-1.5 sm:gap-2">
+          <div className="max-[900px]:hidden">
+            <ConnectionStatus />
+          </div>
+          <NetworkChip onClick={() => setNavOpen(() => true)} />
           <button
             id="wallet-toggle"
             type="button"
@@ -146,7 +185,7 @@ function Header({ walletOpen, setWalletOpen }: { walletOpen: boolean; setWalletO
             aria-pressed={walletOpen || onWalletPage}
             aria-haspopup="dialog"
             className={clsx(
-              'inline-flex h-8 items-center gap-2 rounded-full px-3 text-xs font-semibold transition-shadow',
+              'inline-flex h-8 items-center gap-2 rounded-full px-3 text-xs font-semibold transition-shadow max-[900px]:hidden',
               walletOpen || onWalletPage ? 'btn-primary' : 'btn-outline',
             )}
             title="Fund this wallet from your own Zcash wallet, or withdraw"
@@ -161,16 +200,18 @@ function Header({ walletOpen, setWalletOpen }: { walletOpen: boolean; setWalletO
             aria-pressed={open}
             aria-keyshortcuts="L"
             className={clsx(
-              'inline-flex h-8 items-center gap-2 rounded-full px-3 text-xs font-semibold transition-shadow',
+              'inline-flex h-8 shrink-0 items-center gap-2 rounded-full px-3 text-xs font-semibold transition-shadow max-[900px]:size-10 max-[900px]:justify-center max-[900px]:px-0',
               open ? 'btn-primary' : 'btn-outline',
             )}
+            aria-label="Leak Inspector"
           >
             <ScanEye className="size-4" aria-hidden />
-            <span className="hidden sm:inline">Leak Inspector</span>
-            <span className="hidden sm:inline-flex">
+            <span className="hidden sm:inline max-[900px]:hidden!">Leak Inspector</span>
+            <span className="hidden sm:inline-flex max-[900px]:hidden!">
               <Kbd inverted={open}>L</Kbd>
             </span>
           </button>
+          <BurgerButton open={navOpen} onClick={() => setNavOpen((v) => !v)} />
         </div>
       </div>
     </header>

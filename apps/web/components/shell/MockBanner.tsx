@@ -27,16 +27,17 @@ export function MockBanner() {
     >
       <div className="mx-auto flex min-h-9 max-w-[1600px] flex-wrap items-center gap-x-3 gap-y-1 px-4 py-1.5 sm:px-6">
         <span className="rounded bg-mock px-1.5 py-0.5 font-mono shadow-[0_0_12px_rgba(139,124,246,0.5)] text-[11px] font-bold tracking-[0.12em] text-white">MOCK DATA</span>
-        <span className="rounded bg-black/70 px-1.5 text-fg">
+        <span className="rounded bg-black/70 px-1.5 text-fg max-[600px]:hidden">
           Scripted replay in this browser tab. No daemon, relay or Zcash node is involved and time is compressed.
         </span>
+        <span className="hidden rounded bg-black/70 px-1.5 text-fg max-[600px]:inline">Scripted replay, no daemons</span>
         {reason === 'unreachable' && (
           <span className="text-muted">
             Daemons unreachable at load ({hostOf(conn.buyer.url)}, {hostOf(conn.provider.url)}).
             {host && host !== 'localhost' && host !== '127.0.0.1' ? ' Daemons only allow CORS from localhost:7703 and 127.0.0.1:7703.' : ''}
           </span>
         )}
-        {reason === 'forced' && <span className="text-muted">Forced by NEXT_PUBLIC_SILICR_MOCK or ?mock=1.</span>}
+        {reason === 'forced' && <span className="mock-reason text-muted">Forced by NEXT_PUBLIC_SILICR_MOCK or ?mock=1.</span>}
         {err && <span className="text-bad">{err}</span>}
         <span className="ml-auto flex items-center gap-2">
           <Button

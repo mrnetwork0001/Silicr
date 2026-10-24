@@ -18,6 +18,8 @@ export const metadata: Metadata = {
 export const viewport: Viewport = {
   themeColor: '#000000',
   colorScheme: 'dark',
+  // Lets the safe-area insets (env(safe-area-inset-*)) apply on notched phones.
+  viewportFit: 'cover',
 };
 
 export default function RootLayout({ children }: { children: ReactNode }) {

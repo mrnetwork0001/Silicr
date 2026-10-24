@@ -582,3 +582,147 @@
     background-position: 0 0;
   }
 }
+
+/* ---------------------------------------------------------------------------
+ * Phones and tablets. Everything below is scoped to ≤ 900px (tablet/phone layout:
+ * drawer, single column) and ≤ 600px (phone density). Desktop (≥ 901px) is untouched,
+ * except the burger, drawer and tab row, which are display:none there.
+ */
+.burger-btn {
+  width: 40px;
+  height: 40px;
+  flex-shrink: 0;
+  border-radius: 9999px;
+  cursor: pointer;
+  display: none; /* shown at ≤ 900px only */
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+  gap: 4.5px;
+}
+.burger-btn span {
+  width: 16px;
+  height: 1.5px;
+  border-radius: 1px;
+  background: currentColor;
+  transition:
+    transform 0.22s cubic-bezier(0.2, 0.7, 0.2, 1),
+    opacity 0.2s;
+}
+.burger-btn.open span:nth-child(1) {
+  transform: translateY(6px) rotate(45deg);
+}
+.burger-btn.open span:nth-child(2) {
+  opacity: 0;
+}
+.burger-btn.open span:nth-child(3) {
+  transform: translateY(-6px) rotate(-45deg);
+}
+.drawer-backdrop,
+.nav-drawer {
+  display: none;
+}
+
+@media (max-width: 900px) {
+  html,
+  body {
+    /* clip, not hidden: hidden would make body a scroll container and break the sticky top bar */
+    overflow-x: clip;
+  }
+  main,
+  aside,
+  section,
+  .glass-panel {
+    min-width: 0;
+    max-width: 100%;
+  }
+  .app-main {
+    padding-left: 10px;
+    padding-right: 10px;
+    padding-top: 12px;
+    padding-bottom: calc(48px + env(safe-area-inset-bottom));
+  }
+
+  .burger-btn {
+    display: inline-flex;
+  }
+  .mobile-tabs {
+    padding: 6px 10px 8px;
+  }
+
+  .drawer-backdrop {
+    display: block;
+    position: fixed;
+    inset: 0;
+    z-index: 60;
+    border: 0;
+    background: rgba(0, 0, 0, 0.6);
+    backdrop-filter: blur(2px);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.25s;
+  }
+  .drawer-backdrop.show {
+    opacity: 1;
+    pointer-events: auto;
+  }
+  .nav-drawer {
+    display: flex;
+    flex-direction: column;
+    position: fixed;
+    top: 0;
+    bottom: 0;
+    left: 0;
+    z-index: 61;
+    width: min(88vw, 340px);
+    height: 100dvh;
+    background: var(--glass), var(--panel);
+    border-right: 1px solid var(--line);
+    padding-bottom: env(safe-area-inset-bottom);
+    transform: translateX(-100%);
+    visibility: hidden;
+    transition:
+      transform 0.25s cubic-bezier(0.2, 0.7, 0.2, 1),
+      visibility 0s linear 0.25s;
+  }
+  .nav-drawer.open {
+    transform: none;
+    visibility: visible;
+    transition:
+      transform 0.25s cubic-bezier(0.2, 0.7, 0.2, 1),
+      visibility 0s;
+    box-shadow: 20px 0 60px rgba(0, 0, 0, 0.55);
+  }
+
+  /* Touch: no iOS zoom on focus, comfortable targets. */
+  input:not([type='checkbox']):not([type='radio']):not([type='range']),
+  select,
+  textarea {
+    font-size: 16px;
+  }
+  button.btn-primary:not(#inspector-toggle),
+  a.btn-primary {
+    min-height: 44px;
+  }
+  button.btn-outline {
+    min-height: 36px;
+  }
+
+  /* Wide key/value text wraps instead of widening its panel. */
+  .break-all,
+  .font-mono {
+    overflow-wrap: anywhere;
+  }
+}
+
+@media (max-width: 600px) {
+  .mock-reason {
+    display: none;
+  }
+}
+
+@media (max-width: 900px) {
+  .mock-stripes button.btn-outline {
+    min-height: 30px;
+  }
+}
