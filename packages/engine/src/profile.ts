@@ -60,7 +60,7 @@ export interface TimingProfile {
 /** NU7 activation on Zcash mainnet (25 s blocks after it; testnet already runs NU7). */
 export const MAINNET_NU7_HEIGHT = 3_543_405;
 
-/** In-process simulated chain, 1 s blocks: the zero-setup demo. */
+/** In-process simulated chain, 1 s blocks: test harness only (never offered to users). */
 export const MEMORY_PROFILE: TimingProfile = {
   name: 'memory',
   blockTimeS: 1,
@@ -84,7 +84,7 @@ export const MEMORY_PROFILE: TimingProfile = {
   payFreshS: 2,
 };
 
-/** Simulated chain with 250 ms blocks: `silicr demo --fast` and tests. */
+/** Simulated chain with 250 ms blocks: tests and `pnpm verify`. */
 export const FAST_PROFILE: TimingProfile = {
   name: 'fast',
   blockTimeS: 0.25,

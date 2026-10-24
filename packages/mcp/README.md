@@ -19,10 +19,10 @@ agent ──MCP (stdio)──▶ silicr-mcp ──HTTP (loopback)──▶ buyer
 
 ## Quick start
 
-Start the zero-setup demo (simulated chain, relay, buyer and provider in one process):
+Start the testnet demo (relay, buyer and provider in one process on Zcash testnet, with the funded wallets in `.silicr/wallets/test-*`):
 
 ```bash
-pnpm silicr demo          # relay 7700, buyer 7701, provider 7702; Ctrl-C stops it
+pnpm silicr demo --no-run --keep   # relay 7700, buyer 7701, provider 7702; Ctrl-C stops it
 ```
 
 Then point an MCP client at the server. From the repo root the launcher is `packages/mcp/bin/silicr-mcp.js` (it runs TypeScript through `tsx`, no build step).
@@ -85,7 +85,7 @@ Every tool returns a one-line human summary followed by concise JSON (also as `s
 
 | Tool | What it does | Side effects |
 |---|---|---|
-| `silicr_status` | Role, network (*simulated chain*, *Zcash testnet* or *Zcash mainnet (real ZEC)*), height, shielded balance, demo mode, the session cap (max, committed, spent, remaining), the daemon's own `spendCap` if it has one, and whether the provider daemon is reachable. | none |
+| `silicr_status` | Role, network (*Zcash testnet* or *Zcash mainnet (real ZEC)*), height, shielded balance, demo mode, the session cap (max, committed, spent, remaining), the daemon's own `spendCap` if it has one, and whether the provider daemon is reachable. | none |
 | `silicr_list_providers` | The verified directory: alias, GPUs, min ZEC/h, bond, `verified`. | none |
 | `silicr_estimate` | For gpu/count/hours/max ZEC/h: worst-case cost, estimated ZIP 317 fees, intervals, worst-case exposure to a bad provider (≈1.25 intervals), matching providers, and whether it fits the cap (session and daemon, whichever is stricter). | none |
 | `silicr_request_compute` | Sealed RFQ → signed bids → (auto) accept → metered job. Takes gpu, count, hours, max_zec_per_hour, job_path (dir or one `.py`/`.sh`), command, image, env, providers, auto_accept (default true), wait_blocks. Refused if `hours × max_zec_per_hour` exceeds the remaining cap. The daemon's privacy guard refuses dangerous paths (home dir, `~/.ssh`, wallets); its message is surfaced verbatim. | creates a request, spends ZEC |

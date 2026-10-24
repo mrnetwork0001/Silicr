@@ -1,5 +1,5 @@
 // One process, every party: simulated chain + relay + provider + buyer, each with its daemon.
-// Used by `silicr demo` and the end-to-end tests.
+// Test harness only: the end-to-end tests and `pnpm verify` (users run testnet or mainnet).
 import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { createServer } from 'node:net';
 import { join } from 'node:path';
