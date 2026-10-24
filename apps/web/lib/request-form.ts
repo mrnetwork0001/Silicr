@@ -6,6 +6,13 @@ import type { JobPresetDto, StatusDto } from '@silicr/api';
 import type { RequestFormDerived, RequestFormState } from '@/components/market/NewRequestForm';
 import { parseZec, splitArgv } from './format';
 
+/** "0.5" from 50000000 zats: plain decimal ZEC, no trailing zeros. */
+function formatZecPlain(z: bigint): string {
+  const whole = z / 100_000_000n;
+  const frac = (z % 100_000_000n).toString().padStart(8, '0').replace(/0+$/, '');
+  return frac ? `${whole}.${frac}` : String(whole);
+}
+
 /** What a public-demo buyer daemon allows (StatusDto.publicDemo): server-side presets and request limits. */
 export interface PublicDemoRules {
   presets: JobPresetDto[];
@@ -23,8 +30,12 @@ export function publicDemoForm(f: RequestFormState, rules: PublicDemoRules): Req
   const maxS = rules.limits?.maxDurationS ?? 900;
   const durS = Math.min(preset?.durationS ?? maxS, maxS);
   const maxCount = rules.limits?.maxCount ?? 1;
+  const maxPrice = rules.limits?.maxPricePerHourZats;
+  const cur = parseZec(f.maxZec);
+  const clampPrice = maxPrice && /^\d+$/.test(maxPrice) && (cur === null || cur > BigInt(maxPrice));
   return {
     ...f,
+    ...(clampPrice ? { maxZec: formatZecPlain(BigInt(maxPrice)) } : {}),
     preset: preset?.id ?? '',
     gpu: preset?.gpu ?? f.gpu,
     count: String(Math.min(Math.max(1, Number(f.count) || 1), maxCount)),
@@ -51,6 +62,10 @@ export function derive(f: RequestFormState, demo: PublicDemoRules | null = null)
     if (maxS && durationS !== null && durationS > maxS) errors.duration = `At most ${Math.floor(maxS / 60)} min in the public demo`;
     const maxCount = demo.limits?.maxCount;
     if (maxCount && count !== null && count > maxCount) errors.count = `At most ${maxCount} in the public demo`;
+    const maxPrice = demo.limits?.maxPricePerHourZats;
+    if (maxPrice && /^\d+$/.test(maxPrice) && maxPerHour !== null && maxPerHour > BigInt(maxPrice)) {
+      errors.maxZec = `At most ${formatZecPlain(BigInt(maxPrice))} ZEC/h in the public demo`;
+    }
   } else if (!f.path.trim()) errors.path = 'Required';
   const argv = demo ? [] : splitArgv(f.command.trim());
   if (!demo && !argv.length) errors.command = 'Required';

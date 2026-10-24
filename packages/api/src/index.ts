@@ -115,7 +115,7 @@ export interface StatusDto {
   /** Public demo only: the server-side example jobs a request may run. */
   presets?: JobPresetDto[];
   /** Public demo only: the limits the daemon enforces on POST /api/rfqs. */
-  publicDemoLimits?: { maxDurationS: number; maxCount: number; maxActive: number; perIpPerHour: number };
+  publicDemoLimits?: { maxDurationS: number; maxCount: number; maxActive: number; perIpPerHour: number; maxPricePerHourZats?: ZatsString };
 }
 
 /** A server-side example job offered by a public-demo daemon. */

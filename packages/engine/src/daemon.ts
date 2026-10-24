@@ -167,7 +167,7 @@ export async function startDaemon(o: DaemonOptions): Promise<RunningDaemon> {
     const out: StatusDto = { ...s, publicDemo: true };
     if (node.role === 'buyer') {
       out.presets = demo.presets.map(presetDto);
-      out.publicDemoLimits = { maxDurationS: demo.maxDurationS, maxCount: demo.maxCount, maxActive: demo.maxActive, perIpPerHour: demo.perIpPerHour };
+      out.publicDemoLimits = { maxDurationS: demo.maxDurationS, maxCount: demo.maxCount, maxActive: demo.maxActive, perIpPerHour: demo.perIpPerHour, maxPricePerHourZats: demo.maxPricePerHourZats.toString() };
     }
     return out;
   }

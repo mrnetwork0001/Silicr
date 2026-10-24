@@ -61,7 +61,7 @@ describe('public demo: status', () => {
     expect(b.body.publicDemo).toBe(true);
     expect(b.body.presets).toEqual([{ id: 'tiny-train', title: 'Tiny', description: 'd', command: ['python3', 'train.py'], gpu: 'a100', durationS: 60 }]);
     expect(JSON.stringify(b.body.presets)).not.toContain(w.jobDir);
-    expect(b.body.publicDemoLimits).toEqual({ maxDurationS: 900, maxCount: 1, maxActive: 1, perIpPerHour: 3 });
+    expect(b.body.publicDemoLimits).toEqual({ maxDurationS: 900, maxCount: 1, maxActive: 1, perIpPerHour: 3, maxPricePerHourZats: '50000000' });
     const p = await call<StatusDto>(providerD.url, 'GET', '/api/status');
     expect(p.body.publicDemo).toBe(true);
     expect(p.body.presets).toBeUndefined();

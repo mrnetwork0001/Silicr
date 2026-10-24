@@ -28,7 +28,7 @@ const demoStatus: StatusDto = {
     { id: 'tiny-train', title: 'Tiny training run', description: 'A character-level model, ~2 min', command: ['python3', 'train.py'], gpu: 'a100', durationS: 600 },
     { id: 'tiny-train-short', title: 'Short run', description: '60 steps', command: ['python3', 'train.py'], gpu: 'cpu', durationS: 300 },
   ],
-  publicDemoLimits: { maxDurationS: 900, maxCount: 1, maxActive: 1, perIpPerHour: 3 },
+  publicDemoLimits: { maxDurationS: 900, maxCount: 1, maxActive: 1, perIpPerHour: 3, maxPricePerHourZats: '50000000' },
 };
 
 describe('the request form on your own daemon', () => {
@@ -71,5 +71,16 @@ describe('the request form on a public demo daemon', () => {
     expect(derive({ ...f, duration: '16' }, rules).errors.duration).toBe('At most 15 min in the public demo');
     expect(derive({ ...f, count: '2' }, rules).errors.count).toBe('At most 1 in the public demo');
     expect(derive({ ...f, preset: 'rm-rf' }, rules).errors.preset).toBe('Pick an example job');
+  });
+});
+
+describe('the public demo price ceiling', () => {
+  const rules = publicDemoRules(demoStatus)!;
+  it('clamps the max price to the demo ceiling and refuses more', () => {
+    const f = publicDemoForm({ ...FORM, maxZec: '0.8' }, rules);
+    expect(f.maxZec).toBe('0.5');
+    expect(derive(f, rules).errors.maxZec).toBeUndefined();
+    expect(derive({ ...f, maxZec: '0.6' }, rules).errors.maxZec).toBe('At most 0.5 ZEC/h in the public demo');
+    expect(publicDemoForm({ ...FORM, maxZec: '0.1' }, rules).maxZec).toBe('0.1');
   });
 });
