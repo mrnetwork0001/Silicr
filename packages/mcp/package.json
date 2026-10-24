@@ -1,0 +1,28 @@
+{
+  "name": "@silicr/mcp",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "MCP server: lets an AI agent rent GPU compute on Silicr and pay in shielded ZEC through the local buyer daemon",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "start": "node ./bin/silicr-mcp.js",
+    "test": "vitest run --passWithNoTests",
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "bin": {
+    "silicr-mcp": "./bin/silicr-mcp.js"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.32.1",
+    "@silicr/api": "workspace:^",
+    "tsx": "^4.23.15",
+    "zod": "^4.6.7"
+  },
+  "devDependencies": {
+    "@silicr/engine": "workspace:^",
+    "@silicr/runner": "workspace:^"
+  }
+}
