@@ -50,10 +50,7 @@ function proxyTitle(proxy: NonNullable<StatusDto['proxy']>): string {
 export function ConnectionStatus() {
   const mode = useSilicr((s) => s.mode);
   const conn = useSilicr((s) => s.conn);
-  const buyerStatus = useSilicr((s) => s.buyerStatus);
-  const providerStatus = useSilicr((s) => s.providerStatus);
-  const relayObserver = useSilicr((s) => s.relayObserver);
-  const { status, mismatch } = useChainInfo();
+  const { status } = useChainInfo();
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
   const now = useNow(5000, open);
@@ -151,90 +148,106 @@ export function ConnectionStatus() {
           aria-label="Connections"
           className="absolute right-0 top-10 z-50 w-[min(92vw,380px)] rounded-lg border border-line bg-raised p-1 text-xs shadow-[var(--shadow-pop)]"
         >
-          {mode === 'mock' && (
-            <div className="mock-stripes m-1 rounded-md border border-mock/40 p-2.5 text-mock">
-              <div className="font-mono font-semibold tracking-wide">MOCK DATA</div>
-              <div className="mt-0.5 text-fg">Scripted replay inside this browser tab. Nothing below is a live connection.</div>
-            </div>
-          )}
-          {(['buyer', 'provider', 'relay'] as const).map((r) => {
-            const c = conn[r];
-            const st = r === 'buyer' ? buyerStatus : r === 'provider' ? providerStatus : null;
-            return (
-              <div key={r} className="rounded-md px-2.5 py-2 hover:bg-hover">
-                <div className="flex items-center justify-between gap-2">
-                  <span className="flex items-center gap-2 font-medium text-fg">
-                    <Dot tone={mode === 'mock' ? 'neutral' : connTone(c)} />
-                    {ROLE_LABEL[r]} {r === 'relay' ? '' : 'daemon'}
-                  </span>
-                  <span className="font-mono text-faint">{hostOf(c.url)}</span>
-                </div>
-                <div className="mt-1 space-y-0.5 pl-3.5 text-muted">
-                  {mode === 'mock' ? (
-                    <div>{c.error ? `Unreachable at load: ${c.error}` : 'Not contacted (mock mode)'}</div>
-                  ) : c.status === 'online' ? (
-                    <>
-                      <div>
-                        Online
-                        {r !== 'relay' && <> · events {c.sse === 'open' ? 'streaming' : c.sse === 'off' ? 'off' : c.sse}</>}
-                        {c.lastOkAt ? <> · seen {formatAgo(c.lastOkAt, now)}</> : null}
-                      </div>
-                    </>
-                  ) : (
-                    <div className="text-bad">{c.status === 'offline' ? `Offline: ${c.error ?? 'no answer'}` : 'Not checked yet'}</div>
-                  )}
-                  {st && (mode === 'mock' || c.status === 'online') && (
-                    <>
-                      <div className="flex flex-wrap items-center gap-x-2">
-                        <span className={st.network === 'main' ? 'font-medium text-real' : undefined}>{networkLabel(st.network)}</span>
-                        <span>v{st.version}</span>
-                        <span>{st.demoMode ? 'demo mode' : 'not in demo mode'}</span>
-                        {st.alias && <span className="text-fg">{st.alias}</span>}
-                      </div>
-                      {st.address && (
-                        <div className="flex items-center gap-1">
-                          Address <Mono value={st.address} className="text-fg" />
-                        </div>
-                      )}
-                      {st.spendCap && <div>Spend cap: {spendCapSummary(st.spendCap)}</div>}
-                      {st.network === 'main' && !st.spendCap && (
-                        <div className="text-bad">No spend cap reported: a mainnet daemon should refuse to start without one.</div>
-                      )}
-                      {st.proxy && (
-                        <div className="flex items-center gap-1" title={proxyTitle(st.proxy)}>
-                          <Route className="size-3 text-ok" aria-hidden /> via {st.proxy.kind} proxy <Mono value={st.proxy.url} copy={false} />
-                        </div>
-                      )}
-                    </>
-                  )}
-                  {r === 'relay' && (mode === 'mock' || c.status === 'online') && (
-                    <div>Observer feed: {relayObserver === 'available' ? 'available (demo)' : relayObserver === 'unavailable' ? 'not exposed' : 'not checked yet'}</div>
-                  )}
-                </div>
-              </div>
-            );
-          })}
-          {status && (
-            <div className="m-1 flex items-center gap-2 rounded-md border border-line px-2.5 py-2 text-muted">
-              <Radio className="size-3.5 text-faint" aria-hidden />
-              <span>
-                {networkLabel(status.network)} · height <span className="font-mono text-fg">{formatHeight(status.height)}</span> · ~
-                {status.blockTimeS}s blocks
-              </span>
-            </div>
-          )}
-          {mismatch && <div className="m-1 rounded-md bg-bad-soft px-2.5 py-2 text-bad">Buyer and provider report different networks.</div>}
-          {main && (
-            <div className="m-1 rounded-md border border-real/40 bg-real-soft px-2.5 py-2 text-fg">
-              <span className="font-semibold text-real">Real ZEC.</span> Every payment spends Zcash mainnet funds.{' '}
-              {status?.spendCap ? `Spend cap: ${spendCapSummary(status.spendCap)}.` : 'No spend cap reported: the daemon should refuse to run on mainnet without one.'}
-            </div>
-          )}
-          {mode === 'real' && buyerStatus?.address && (
-            <div className="px-2.5 pb-2 pt-1 text-2xs text-faint">Buyer wallet {truncateMiddle(buyerStatus.address, 10, 6)} stays on this machine.</div>
-          )}
+          <ConnectionDetails now={now} />
         </div>
       )}
     </div>
+  );
+}
+
+/** Per-daemon connection details: the dropdown body on desktop, the top of the drawer on phones. */
+export function ConnectionDetails({ now }: { now: number }) {
+  const mode = useSilicr((s) => s.mode);
+  const conn = useSilicr((s) => s.conn);
+  const buyerStatus = useSilicr((s) => s.buyerStatus);
+  const providerStatus = useSilicr((s) => s.providerStatus);
+  const relayObserver = useSilicr((s) => s.relayObserver);
+  const { status, mismatch } = useChainInfo();
+  const main = status?.network === 'main';
+  return (
+    <>
+      {mode === 'mock' && (
+        <div className="mock-stripes m-1 rounded-md border border-mock/40 p-2.5 text-mock">
+          <div className="font-mono font-semibold tracking-wide">MOCK DATA</div>
+          <div className="mt-0.5 text-fg">Scripted replay inside this browser tab. Nothing below is a live connection.</div>
+        </div>
+      )}
+      {(['buyer', 'provider', 'relay'] as const).map((r) => {
+        const c = conn[r];
+        const st = r === 'buyer' ? buyerStatus : r === 'provider' ? providerStatus : null;
+        return (
+          <div key={r} className="rounded-md px-2.5 py-2 hover:bg-hover">
+            <div className="flex items-center justify-between gap-2">
+              <span className="flex items-center gap-2 font-medium text-fg">
+                <Dot tone={mode === 'mock' ? 'neutral' : connTone(c)} />
+                {ROLE_LABEL[r]} {r === 'relay' ? '' : 'daemon'}
+              </span>
+              <span className="font-mono text-faint">{hostOf(c.url)}</span>
+            </div>
+            <div className="mt-1 space-y-0.5 pl-3.5 text-muted">
+              {mode === 'mock' ? (
+                <div>{c.error ? `Unreachable at load: ${c.error}` : 'Not contacted (mock mode)'}</div>
+              ) : c.status === 'online' ? (
+                <>
+                  <div>
+                    Online
+                    {r !== 'relay' && <> · events {c.sse === 'open' ? 'streaming' : c.sse === 'off' ? 'off' : c.sse}</>}
+                    {c.lastOkAt ? <> · seen {formatAgo(c.lastOkAt, now)}</> : null}
+                  </div>
+                </>
+              ) : (
+                <div className="text-bad">{c.status === 'offline' ? `Offline: ${c.error ?? 'no answer'}` : 'Not checked yet'}</div>
+              )}
+              {st && (mode === 'mock' || c.status === 'online') && (
+                <>
+                  <div className="flex flex-wrap items-center gap-x-2">
+                    <span className={st.network === 'main' ? 'font-medium text-real' : undefined}>{networkLabel(st.network)}</span>
+                    <span>v{st.version}</span>
+                    <span>{st.demoMode ? 'demo mode' : 'not in demo mode'}</span>
+                    {st.alias && <span className="text-fg">{st.alias}</span>}
+                  </div>
+                  {st.address && (
+                    <div className="flex items-center gap-1">
+                      Address <Mono value={st.address} className="text-fg" />
+                    </div>
+                  )}
+                  {st.spendCap && <div>Spend cap: {spendCapSummary(st.spendCap)}</div>}
+                  {st.network === 'main' && !st.spendCap && (
+                    <div className="text-bad">No spend cap reported: a mainnet daemon should refuse to start without one.</div>
+                  )}
+                  {st.proxy && (
+                    <div className="flex items-center gap-1" title={proxyTitle(st.proxy)}>
+                      <Route className="size-3 text-ok" aria-hidden /> via {st.proxy.kind} proxy <Mono value={st.proxy.url} copy={false} />
+                    </div>
+                  )}
+                </>
+              )}
+              {r === 'relay' && (mode === 'mock' || c.status === 'online') && (
+                <div>Observer feed: {relayObserver === 'available' ? 'available (demo)' : relayObserver === 'unavailable' ? 'not exposed' : 'not checked yet'}</div>
+              )}
+            </div>
+          </div>
+        );
+      })}
+      {status && (
+        <div className="m-1 flex items-center gap-2 rounded-md border border-line px-2.5 py-2 text-muted">
+          <Radio className="size-3.5 text-faint" aria-hidden />
+          <span>
+            {networkLabel(status.network)} · height <span className="font-mono text-fg">{formatHeight(status.height)}</span> · ~
+            {status.blockTimeS}s blocks
+          </span>
+        </div>
+      )}
+      {mismatch && <div className="m-1 rounded-md bg-bad-soft px-2.5 py-2 text-bad">Buyer and provider report different networks.</div>}
+      {main && (
+        <div className="m-1 rounded-md border border-real/40 bg-real-soft px-2.5 py-2 text-fg">
+          <span className="font-semibold text-real">Real ZEC.</span> Every payment spends Zcash mainnet funds.{' '}
+          {status?.spendCap ? `Spend cap: ${spendCapSummary(status.spendCap)}.` : 'No spend cap reported: the daemon should refuse to run on mainnet without one.'}
+        </div>
+      )}
+      {mode === 'real' && buyerStatus?.address && (
+        <div className="px-2.5 pb-2 pt-1 text-2xs text-faint">Buyer wallet {truncateMiddle(buyerStatus.address, 10, 6)} stays on this machine.</div>
+      )}
+    </>
   );
 }
