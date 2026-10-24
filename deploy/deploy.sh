@@ -44,10 +44,12 @@ if [[ $COPY_WALLETS == 1 ]] || ! "${SSH[@]}" 'test -d /opt/silicr/data/wallets/t
     docker compose -p silicr -f compose.yml stop buyer provider 2>/dev/null || true
     install -d -m 700 /opt/silicr/data/wallets /opt/silicr/data/wallets/test-buyer /opt/silicr/data/wallets/test-provider'
   for w in test-buyer test-provider; do
-    # Every file except the lock and the sidecar log.
+    # Wallet and key files only: skip the lock, the sidecar log, local deal history
+    # (*-state.json, rfqs/, results/, checkpoints/) and any other directory.
     files=()
     for f in "$REPO/.silicr/wallets/$w"/*; do
-      case "$(basename "$f")" in sidecar.lock|sidecar.log) ;; *) files+=("$f") ;; esac
+      [[ -f "$f" ]] || continue
+      case "$(basename "$f")" in sidecar.lock|sidecar.log|*-state.json) ;; *) files+=("$f") ;; esac
     done
     scp -q -p "${files[@]}" "$HOST:/opt/silicr/data/wallets/$w/"
   done
