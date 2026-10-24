@@ -1,0 +1,17 @@
+node_modules/
+.next/
+dist/
+coverage/
+*.log
+.DS_Store
+.env*
+!.env.example
+
+# Wallets, seeds, relay data and job scratch space. Never commit these.
+.silicr/
+**/wallets/
+*.seed
+*.age
+
+# Rust sidecar build output
+zec-sidecar/target/
