@@ -14,6 +14,7 @@ import { renderReceipt } from '@/lib/receipt';
 import { receiptFilename, receiptFromInspector } from '@/lib/receipt-from-inspector';
 import { actions, useSilicr } from '@/lib/store';
 import { buildTimeline, stateUntil } from '@/lib/timeline';
+import { RealZecChip } from '../shell/ConnectionStatus';
 import { Badge, Kbd, Select } from '../ui';
 import { InspectorColumn, type Spot } from './InspectorColumn';
 import { TimelineScrub } from './Timeline';
@@ -24,6 +25,9 @@ const PARTY_META: Record<Party, { name: string; sub: string; icon: LucideIcon }>
   provider: { name: 'Provider', sub: 'the GPU seller', icon: Cpu },
   buyer: { name: 'Buyer', sub: 'you, on this machine', icon: Laptop },
 };
+
+/** Short party names for phones (≤ 900px), where the matrix and the switcher are narrow. */
+const PARTY_SHORT: Record<Party, string> = { chain: 'Chain', relay: 'Relay', provider: 'Provider', buyer: 'You' };
 
 const GRID = 'grid grid-cols-[176px_repeat(4,minmax(0,1fr))] gap-x-3 xl:grid-cols-[196px_repeat(4,minmax(0,1fr))]';
 
@@ -154,33 +158,34 @@ function InspectorPanel() {
       aria-modal="true"
       aria-label="Leak Inspector"
       tabIndex={-1}
-      className="fixed inset-x-0 bottom-0 z-30 flex flex-col bg-bg outline-none animate-in"
+      className="fixed inset-x-0 bottom-0 z-30 flex flex-col bg-bg outline-none animate-in max-[900px]:top-[var(--banner-h,0px)]! max-[900px]:z-[45] max-[900px]:pb-[env(safe-area-inset-bottom)]"
       style={{ top: 'var(--chrome-h, 48px)' }}
     >
       {/* Header */}
       <div className="shrink-0 border-b border-line bg-panel">
-        <div className="mx-auto flex max-w-[1880px] flex-wrap items-center gap-x-4 gap-y-2 px-4 py-2.5 sm:px-6">
-          <div className="flex items-center gap-2.5">
+        <div className="mx-auto flex max-w-[1880px] flex-wrap items-center gap-x-4 gap-y-2 px-4 py-2.5 sm:px-6 max-[900px]:gap-x-2 max-[900px]:px-2.5 max-[900px]:pb-2 max-[900px]:pt-[calc(8px+env(safe-area-inset-top))]">
+          <div className="flex items-center gap-2.5 max-[900px]:min-w-0 max-[900px]:flex-1 max-[900px]:gap-2">
             <ScanEye className="size-5 text-accent" aria-hidden />
-            <div>
+            <div className="min-w-0">
               <h2 className="text-base font-semibold leading-tight tracking-tight text-fg">Leak Inspector</h2>
-              <p className="text-[11.5px] leading-tight text-muted">One request, four viewpoints, each from that party&apos;s own data</p>
+              <p className="text-[11.5px] leading-tight text-muted max-[900px]:hidden">One request, four viewpoints, each from that party&apos;s own data</p>
             </div>
+            {data.network === 'main' && <RealZecChip className="min-[901px]:hidden" />}
           </div>
           {data.mock && (
-            <Badge tone="mock" className="font-mono tracking-wide">
+            <Badge tone="mock" className="font-mono tracking-wide max-[900px]:hidden">
               MOCK DATA
             </Badge>
           )}
-          <div className="flex min-w-0 items-center gap-2">
-            <label htmlFor="insp-target" className="text-xs text-muted">
+          <div className="flex min-w-0 items-center gap-2 max-[900px]:order-3 max-[900px]:w-full">
+            <label htmlFor="insp-target" className="text-xs text-muted max-[900px]:sr-only">
               Request
             </label>
             <Select
               id="insp-target"
               value={target ?? ''}
               onChange={(e) => actions.setInspector({ pinnedRfqId: e.target.value || null })}
-              className="h-8 w-auto min-w-[280px] max-w-[420px] font-mono text-xs"
+              className="h-8 w-auto min-w-[280px] max-w-[420px] font-mono text-xs max-[900px]:h-10 max-[900px]:min-w-0 max-[900px]:max-w-none max-[900px]:flex-1"
             >
               {!options.length && <option value="">No requests yet</option>}
               {target && !options.some((o) => o.rfqId === target) && <option value={target}>{target}</option>}
@@ -201,7 +206,7 @@ function InspectorPanel() {
             type="button"
             onClick={exportReceipt}
             disabled={!fullData.rfqId}
-            className="inline-flex h-8 items-center gap-1.5 rounded-md border border-line-strong px-2.5 text-xs font-medium text-fg hover:bg-hover disabled:opacity-50"
+            className="inline-flex h-8 items-center gap-1.5 rounded-md border border-line-strong px-2.5 text-xs font-medium text-fg hover:bg-hover disabled:opacity-50 max-[900px]:hidden"
             title="Download a self-contained HTML privacy receipt for this request"
           >
             <Download className="size-3.5" aria-hidden />
@@ -210,20 +215,24 @@ function InspectorPanel() {
           <button
             type="button"
             onClick={() => actions.setInspector({ open: false })}
-            className="inline-flex h-8 items-center gap-1.5 rounded-md border border-line-strong px-2 text-xs text-muted hover:bg-hover hover:text-fg"
+            className="inline-flex h-8 items-center gap-1.5 rounded-md border border-line-strong px-2 text-xs text-muted hover:bg-hover hover:text-fg max-[900px]:order-2 max-[900px]:size-10 max-[900px]:justify-center max-[900px]:rounded-full max-[900px]:px-0"
             aria-label="Close the Leak Inspector"
           >
-            <Kbd>Esc</Kbd>
+            <Kbd className="max-[900px]:hidden">Esc</Kbd>
             <X className="size-4" aria-hidden />
           </button>
         </div>
       </div>
 
       {/* Body */}
-      <div className="min-h-0 flex-1 overflow-y-auto lg:overflow-hidden">
-        <div className="mx-auto flex h-full max-w-[1880px] flex-col gap-3 px-4 pb-3 pt-3 sm:px-6">
-          <TimelineScrub timeline={timeline} playhead={playhead} now={now} playing={playing} visible={visibleObs} total={totalObs} onScrub={onScrub} onPlay={onPlay} />
-          <div className="shrink-0 overflow-x-auto thin-scroll">
+      <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain lg:overflow-hidden">
+        {/* ≤ 900px order: matrix → compact timeline → party switcher → that party's column → notes → export. */}
+        <div className="mx-auto flex h-full max-w-[1880px] flex-col gap-3 px-4 pb-3 pt-3 sm:px-6 max-[900px]:px-2.5 max-[900px]:pb-6 max-[900px]:pt-2.5">
+          <div className="shrink-0 max-[900px]:order-2">
+            <TimelineScrub timeline={timeline} playhead={playhead} now={now} playing={playing} visible={visibleObs} total={totalObs} onScrub={onScrub} onPlay={onPlay} />
+          </div>
+          <PhoneMatrix data={data} fieldIndex={fieldIndex} activeFact={activeFact} pinnedFact={pinnedFact} onFact={togglePinFact} />
+          <div className="shrink-0 overflow-x-auto thin-scroll max-[900px]:hidden">
             <div className="min-w-[860px] rounded-lg border border-line bg-panel" role="table" aria-label="Who knows what">
               <div role="row" className={clsx(GRID, 'border-b border-line px-1')}>
                 <div role="columnheader" className="flex flex-col justify-end px-2 py-2.5">
@@ -275,24 +284,38 @@ function InspectorPanel() {
             </div>
           </div>
 
-          <Footnotes limits={limitsUsed} spot={spot} pinned={!!pin} onClear={() => setPin(null)} data={data} />
-
-          {/* Mobile: one party at a time */}
-          <div className="flex shrink-0 gap-1 rounded-md border border-line bg-panel p-1 lg:hidden" role="tablist" aria-label="Viewpoint">
-            {PARTIES.map((p) => (
-              <button
-                key={p}
-                role="tab"
-                aria-selected={tab === p}
-                onClick={() => setTab(p)}
-                className={clsx('flex-1 rounded px-2 py-1.5 text-xs font-medium', tab === p ? 'bg-accent text-accent-fg' : 'text-muted hover:bg-hover')}
-              >
-                {PARTY_META[p].name}
-              </button>
-            ))}
+          <div className="shrink-0 max-[900px]:order-5">
+            <Footnotes limits={limitsUsed} spot={spot} pinned={!!pin} onClear={() => setPin(null)} data={data} />
           </div>
 
-          <div className={clsx(GRID, 'min-h-[420px] flex-1 lg:min-h-0')}>
+          {/* Mobile: one party at a time */}
+          <div
+            className="flex shrink-0 gap-1 rounded-md border border-line bg-panel p-1 lg:hidden max-[900px]:sticky max-[900px]:top-0 max-[900px]:z-10 max-[900px]:order-3 max-[900px]:rounded-full max-[900px]:shadow-[0_8px_20px_rgba(0,0,0,0.6)]"
+            role="tablist"
+            aria-label="Viewpoint"
+          >
+            {PARTIES.map((p) => {
+              const Icon = PARTY_META[p].icon;
+              return (
+                <button
+                  key={p}
+                  role="tab"
+                  aria-selected={tab === p}
+                  onClick={() => setTab(p)}
+                  className={clsx(
+                    'flex-1 rounded px-2 py-1.5 text-xs font-medium max-[900px]:inline-flex max-[900px]:h-9 max-[900px]:min-w-0 max-[900px]:items-center max-[900px]:justify-center max-[900px]:gap-1 max-[900px]:rounded-full max-[900px]:px-1',
+                    tab === p ? 'bg-accent text-accent-fg' : 'text-muted hover:bg-hover',
+                  )}
+                >
+                  <Icon className="size-3.5 shrink-0 min-[901px]:hidden" aria-hidden />
+                  <span className="max-[900px]:hidden">{PARTY_META[p].name}</span>
+                  <span className="truncate min-[901px]:hidden">{PARTY_SHORT[p]}</span>
+                </button>
+              );
+            })}
+          </div>
+
+          <div className={clsx(GRID, 'min-h-[420px] flex-1 lg:min-h-0 max-[900px]:order-4 max-[900px]:min-h-[320px] max-[900px]:flex-none')}>
             <aside className="hidden min-h-0 flex-col gap-3 overflow-y-auto pr-1 text-[11.5px] leading-relaxed text-muted thin-scroll lg:flex">
               <RailNotes data={data} />
             </aside>
@@ -309,8 +332,94 @@ function InspectorPanel() {
               />
             ))}
           </div>
+
+          <button
+            type="button"
+            onClick={exportReceipt}
+            disabled={!fullData.rfqId}
+            className="inline-flex h-11 shrink-0 items-center justify-center gap-1.5 rounded-full border border-line-strong px-4 text-sm font-medium text-fg hover:bg-hover disabled:opacity-50 min-[901px]:hidden max-[900px]:order-6"
+            title="Download a self-contained HTML privacy receipt for this request"
+          >
+            <Download className="size-4" aria-hidden />
+            Export receipt
+          </button>
         </div>
       </div>
+    </div>
+  );
+}
+
+/** ≤ 900px: the 6×4 matrix with each fact as a row header above its four cells, so nothing scrolls sideways. */
+function PhoneMatrix({
+  data,
+  fieldIndex,
+  activeFact,
+  pinnedFact,
+  onFact,
+}: {
+  data: InspectorData;
+  fieldIndex: Map<string, InspField>;
+  activeFact: FactKey | null;
+  pinnedFact: FactKey | null;
+  onFact: (fact: FactKey) => void;
+}) {
+  return (
+    <div className="shrink-0 rounded-lg border border-line bg-panel min-[901px]:hidden max-[900px]:order-1" role="table" aria-label="Who knows what">
+      <div role="row" className="grid grid-cols-4 gap-1 border-b border-line px-1.5 py-2">
+        {PARTIES.map((p) => {
+          const meta = PARTY_META[p];
+          const Icon = meta.icon;
+          const col = data.columns[p];
+          return (
+            <div key={p} role="columnheader" className="flex min-w-0 flex-col items-center gap-0.5 px-0.5 text-center" title={`${meta.name}: ${meta.sub}`}>
+              <span className="flex min-w-0 items-center gap-1">
+                <Icon className="size-3.5 shrink-0 text-fg" aria-hidden />
+                <span className="truncate text-xs font-semibold text-fg">{PARTY_SHORT[p]}</span>
+              </span>
+              <span className="text-[10.5px] tabular-nums text-faint">
+                {col.available ? (
+                  <>
+                    <span className="font-semibold text-fg">{data.knows[p]}</span>/{FACTS.length} known
+                  </>
+                ) : (
+                  'no data'
+                )}
+              </span>
+            </div>
+          );
+        })}
+      </div>
+      {FACTS.map((f, i) => {
+        const active = activeFact === f.key;
+        return (
+          <div
+            key={f.key}
+            role="row"
+            tabIndex={0}
+            aria-selected={pinnedFact === f.key}
+            onClick={() => onFact(f.key)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                onFact(f.key);
+              }
+            }}
+            className={clsx(
+              'grid cursor-pointer grid-cols-4 gap-x-1 border-b border-line px-1.5 pb-1.5 pt-2 outline-none last:border-b-0 focus-visible:bg-accent-soft',
+              active ? 'bg-accent-soft' : 'active:bg-hover',
+            )}
+          >
+            <div role="rowheader" className="col-span-4 flex min-w-0 items-center gap-2 px-1 pb-1">
+              <Kbd className={clsx(active && 'border-accent text-accent')}>{i + 1}</Kbd>
+              <span className="truncate text-[13px] font-medium text-fg">{f.label}</span>
+              {pinnedFact === f.key && <Pin className="size-3 shrink-0 text-accent" aria-label="pinned" />}
+            </div>
+            {PARTIES.map((p) => (
+              <MatrixCell key={p} cell={data.matrix[f.key][p]} party={p} fact={f.key} fieldIndex={fieldIndex} reason={data.columns[p].reason} compact />
+            ))}
+          </div>
+        );
+      })}
     </div>
   );
 }
@@ -350,13 +459,18 @@ function MatrixCell({
   fact,
   fieldIndex,
   reason,
+  compact = false,
 }: {
   cell: Cell;
   party: Party;
   fact: FactKey;
   fieldIndex: Map<string, InspField>;
   reason: string | null;
+  /** The phone matrix: narrow cells, short words. */
+  compact?: boolean;
 }) {
+  const box = compact ? 'h-8 min-w-0 justify-center gap-1 px-1 text-[11px]' : 'h-7 gap-1.5 px-2.5 text-xs';
+  const wrap = compact ? 'min-w-0 py-0.5' : 'px-1 py-1';
   const exp = expectationFor(party, fact);
   const first = cell.evidence[0] ? fieldIndex.get(cell.evidence[0]) : undefined;
   const evidence = first ? `“${first.field.label}: ${first.field.value.length > 80 ? `${first.field.value.slice(0, 80)}…` : first.field.value}”` : '';
@@ -366,23 +480,34 @@ function MatrixCell({
       ? `Knows by definition: it is the ${party === 'buyer' ? 'buyer' : 'provider'}. ${exp?.note ?? ''}`
       : `Knows, from ${evidence}${cell.evidence.length > 1 ? ` and ${cell.evidence.length - 1} more` : ''}.${exp ? ` ${exp.note}` : ' Not expected by THREAT_MODEL.md: investigate.'}`;
     return (
-      <div role="cell" className="px-1 py-1">
+      <div role="cell" className={wrap}>
         <div
           className={clsx(
-            'knows-glow flex h-7 items-center gap-1.5 rounded-md px-2.5 text-xs font-semibold text-knows-fg',
+            'knows-glow flex items-center rounded-md font-semibold text-knows-fg',
+            box,
             unexpected && 'ring-2 ring-bad ring-offset-1 ring-offset-panel',
           )}
           title={title}
+          aria-label={compact ? title : undefined}
         >
-          <Eye className="size-3.5" aria-hidden />
+          <Eye className="size-3.5 shrink-0" aria-hidden />
           Knows
-          {cell.self && <span className="ml-auto rounded bg-white/20 px-1 text-[10px] font-medium">itself</span>}
-          {exp?.limit ? <span className="ml-auto rounded bg-white/20 px-1 text-[10px] font-semibold">limit {exp.limit}</span> : null}
-          {unexpected && (
-            <span className="ml-auto inline-flex items-center gap-0.5 rounded bg-bad px-1 text-[10px]">
-              <TriangleAlert className="size-3" aria-hidden />
-              unexpected
-            </span>
+          {compact ? (
+            <>
+              {exp?.limit ? <span className="rounded bg-white/20 px-0.5 text-[9.5px] font-semibold">L{exp.limit}</span> : null}
+              {unexpected && <TriangleAlert className="size-3 shrink-0" aria-hidden />}
+            </>
+          ) : (
+            <>
+              {cell.self && <span className="ml-auto rounded bg-white/20 px-1 text-[10px] font-medium">itself</span>}
+              {exp?.limit ? <span className="ml-auto rounded bg-white/20 px-1 text-[10px] font-semibold">limit {exp.limit}</span> : null}
+              {unexpected && (
+                <span className="ml-auto inline-flex items-center gap-0.5 rounded bg-bad px-1 text-[10px]">
+                  <TriangleAlert className="size-3" aria-hidden />
+                  unexpected
+                </span>
+              )}
+            </>
           )}
         </div>
       </div>
@@ -390,31 +515,46 @@ function MatrixCell({
   }
   if (cell.state === 'hidden') {
     return (
-      <div role="cell" className="px-1 py-1">
+      <div role="cell" className={wrap}>
         <div
-          className="hatch flex h-7 items-center gap-1.5 rounded-md border border-line bg-black px-2.5 text-xs text-muted"
+          className={clsx('hatch flex items-center rounded-md border border-line bg-black text-muted', box)}
           title={`Doesn't know: ${cell.ciphertext ? 'it holds only ciphertext' : 'withheld from it'} (${evidence}).`}
         >
-          <Lock className="size-3 text-faint" aria-hidden />
-          {cell.ciphertext ? 'Ciphertext only' : 'Hidden'}
+          <Lock className="size-3 shrink-0 text-faint" aria-hidden />
+          {compact ? (
+            <span className="truncate">
+              {cell.ciphertext ? (
+                <>
+                  <span className="max-[600px]:hidden">Ciphertext</span>
+                  <span className="min-[601px]:hidden">Cipher</span>
+                </>
+              ) : (
+                'Hidden'
+              )}
+            </span>
+          ) : cell.ciphertext ? (
+            'Ciphertext only'
+          ) : (
+            'Hidden'
+          )}
         </div>
       </div>
     );
   }
   if (cell.state === 'na') {
     return (
-      <div role="cell" className="px-1 py-1">
-        <div className="flex h-7 items-center rounded-md border border-dashed border-line px-2.5 text-xs text-faint" title={reason ?? 'No data for this party'}>
-          No data
+      <div role="cell" className={wrap}>
+        <div className={clsx('flex items-center rounded-md border border-dashed border-line text-faint', box)} title={reason ?? 'No data for this party'}>
+          {compact ? 'n/a' : 'No data'}
         </div>
       </div>
     );
   }
   return (
-    <div role="cell" className="px-1 py-1">
-      <div className="flex h-7 items-center gap-1.5 px-2.5 text-xs text-faint" title="Nothing in this party's data carries this fact.">
-        <EyeOff className="size-3.5" aria-hidden />
-        Doesn&apos;t know
+    <div role="cell" className={wrap}>
+      <div className={clsx('flex items-center text-faint', box)} title="Nothing in this party's data carries this fact.">
+        <EyeOff className="size-3.5 shrink-0" aria-hidden />
+        {compact ? <span className="truncate">No</span> : <>Doesn&apos;t know</>}
       </div>
     </div>
   );
@@ -422,7 +562,7 @@ function MatrixCell({
 
 function Legend() {
   return (
-    <div className="ml-auto hidden items-center gap-3 text-[11.5px] text-muted md:flex" aria-label="Legend">
+    <div className="ml-auto hidden items-center gap-3 text-[11.5px] text-muted md:flex max-[900px]:hidden!" aria-label="Legend">
       <span className="flex items-center gap-1.5">
         <span className="knows-glow inline-block h-3 w-4 rounded-sm" />
         Knows: readable + sensitive

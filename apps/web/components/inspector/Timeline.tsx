@@ -1,8 +1,8 @@
 'use client';
 
 import clsx from 'clsx';
-import { Pause, Play, Radio } from '@/components/icons';
-import { useCallback, useEffect, useRef } from 'react';
+import { Info, Pause, Play, Radio } from '@/components/icons';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import type { Party } from '@silicr/api';
 import { formatDateTime, formatTime } from '@/lib/format';
 import { isTypingTarget } from '@/lib/hooks';
@@ -45,6 +45,8 @@ export function TimelineScrub({ timeline: t, playhead, now, playing, visible, to
   const dragging = useRef(false);
   const step = currentStep(t, at);
   const empty = t.markers.length === 0;
+  // ≤ 900px: the marker legend folds behind an info toggle.
+  const [legendOpen, setLegendOpen] = useState(false);
 
   const seek = useCallback(
     (next: number) => {
@@ -132,7 +134,7 @@ export function TimelineScrub({ timeline: t, playhead, now, playing, visible, to
 
   return (
     <div className="shrink-0 rounded-lg border border-line bg-panel px-3 py-2" aria-label="Timeline scrub">
-      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11.5px] text-muted">
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11.5px] text-muted max-[600px]:flex-nowrap max-[600px]:gap-x-2">
         <button
           type="button"
           onClick={() => {
@@ -143,7 +145,7 @@ export function TimelineScrub({ timeline: t, playhead, now, playing, visible, to
             }
           }}
           disabled={empty}
-          className="inline-flex h-7 items-center gap-1.5 rounded-md border border-line-strong px-2 text-xs font-medium text-fg hover:bg-hover disabled:opacity-50"
+          className="inline-flex h-7 items-center gap-1.5 rounded-md border border-line-strong px-2 text-xs font-medium text-fg hover:bg-hover disabled:opacity-50 max-[900px]:h-9 max-[900px]:px-3"
           aria-label={playing ? 'Pause playback' : 'Play the timeline at compressed speed'}
           title="Space"
         >
@@ -157,7 +159,7 @@ export function TimelineScrub({ timeline: t, playhead, now, playing, visible, to
             onScrub(null);
           }}
           className={clsx(
-            'inline-flex h-7 items-center gap-1.5 rounded-md border px-2 text-xs font-medium',
+            'inline-flex h-7 items-center gap-1.5 rounded-md border px-2 text-xs font-medium max-[900px]:h-9 max-[900px]:px-3',
             live ? 'border-accent bg-accent-soft text-accent' : 'border-line-strong text-fg hover:bg-hover',
           )}
           aria-pressed={live}
@@ -166,10 +168,10 @@ export function TimelineScrub({ timeline: t, playhead, now, playing, visible, to
           <Radio className={clsx('size-3.5', live && !t.closed && 'animate-pulse')} aria-hidden />
           {t.closed ? 'End' : 'Live'}
         </button>
-        <span className="font-mono tabular-nums text-fg" aria-live="polite">
+        <span className={clsx('font-mono tabular-nums text-fg', live && 'max-[900px]:hidden')} aria-live="polite">
           {label}
         </span>
-        <span className="min-w-0 truncate">
+        <span className="min-w-0 truncate max-[600px]:flex-1">
           {step.index >= 0 && t.steps.length ? (
             <>
               <span className="text-fg">Step {step.index + 1}/{t.steps.length}</span> · {stepText}
@@ -178,9 +180,22 @@ export function TimelineScrub({ timeline: t, playhead, now, playing, visible, to
             stepText
           )}
         </span>
-        <span className="tabular-nums">
+        <span className="tabular-nums max-[600px]:hidden">
           {visible}/{total} observations
         </span>
+        <button
+          type="button"
+          onClick={() => setLegendOpen((v) => !v)}
+          aria-expanded={legendOpen}
+          aria-controls="timeline-legend"
+          aria-label={legendOpen ? 'Hide the timeline legend' : 'Show the timeline legend'}
+          className={clsx(
+            'ml-auto inline-flex size-8 items-center justify-center rounded-full border border-line-strong min-[901px]:hidden',
+            legendOpen ? 'bg-accent-soft text-accent' : 'text-muted hover:text-fg',
+          )}
+        >
+          <Info className="size-4" aria-hidden />
+        </button>
         <span className="ml-auto hidden items-center gap-1 lg:flex">
           <Kbd>←</Kbd>
           <Kbd>→</Kbd> step · <Kbd>Home</Kbd>
@@ -189,7 +204,7 @@ export function TimelineScrub({ timeline: t, playhead, now, playing, visible, to
       </div>
 
       <div className="mt-1.5 flex items-stretch gap-2">
-        <div className="relative w-[78px] shrink-0 text-[9.5px] uppercase tracking-wider text-faint" aria-hidden>
+        <div className="relative w-[78px] shrink-0 text-[9.5px] uppercase tracking-wider text-faint max-[600px]:hidden" aria-hidden>
           <span className="absolute top-[12px]">steps</span>
           <span className="absolute top-[28px]">heartbeats</span>
           <span className="absolute top-[40px]">observations</span>
@@ -248,16 +263,16 @@ export function TimelineScrub({ timeline: t, playhead, now, playing, visible, to
 
           {/* Playhead */}
           <div className="absolute bottom-0 top-0 w-px -translate-x-1/2 bg-accent" style={{ left: `${frac * 100}%` }} aria-hidden>
-            <span className="absolute -top-0.5 left-1/2 h-3 w-3 -translate-x-1/2 rounded-full border-2 border-accent bg-panel shadow-sm" />
+            <span className="absolute -top-0.5 left-1/2 h-3 w-3 -translate-x-1/2 rounded-full border-2 border-accent bg-panel shadow-sm max-[900px]:top-1 max-[900px]:size-7 max-[900px]:border-[3px]" />
           </div>
           <span className="sr-only">{`${Math.round(((at - t.start) / span) * 100)}% of the timeline`}</span>
         </div>
       </div>
-      <div className="ml-[86px] flex justify-between font-mono text-[10px] text-faint" aria-hidden>
+      <div className="ml-[86px] flex justify-between font-mono text-[10px] text-faint max-[600px]:ml-0" aria-hidden>
         <span>{formatTime(t.start)}</span>
         <span>{t.closed ? formatTime(t.end) : `now · ${formatTime(now)}`}</span>
       </div>
-      <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-[10.5px] text-faint" aria-hidden>
+      <div id="timeline-legend" className={clsx('mt-1 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-[10.5px] text-faint', !legendOpen && 'max-[900px]:hidden')} aria-hidden>
         {(Object.keys(STEP_STYLE) as (keyof typeof STEP_STYLE)[]).map((k) => (
           <span key={k} className="flex items-center gap-1">
             <span className={clsx('inline-block', STEP_STYLE[k], 'scale-75')} />
