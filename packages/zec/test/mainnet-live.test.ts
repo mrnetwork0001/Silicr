@@ -25,6 +25,11 @@ const run = promisify(execFile);
 /** NU6.3 (Ironwood) on mainnet: height 3,428,143 (2026-07-28); its consensus branch id. */
 const MAINNET_NU6_3_HEIGHT = 3_428_143;
 const NU6_3_BRANCH = '37a5165b';
+/** NU7 (ZIP 259, branch id 0x77190ad9) activates on mainnet at 3,543,405 (zcash_protocol 0.11); Ironwood stays the current pool. */
+const MAINNET_NU7_HEIGHT = 3_543_405;
+const NU7_BRANCH = '77190ad9';
+/** The branch id lightwalletd reports (its chain tip's) at `tip`. */
+const expectedBranch = (tip: number): string => (tip >= MAINNET_NU7_HEIGHT ? NU7_BRANCH : NU6_3_BRANCH);
 /** A public mainnet v6 (Ironwood, 1 action, fully shielded) transaction at height 3,525,783, listed with `zec-sidecar find-txs --network main` on 2026-10-21. */
 const PUBLIC_MAINNET_V6_TX = process.env['SILICR_MAINNET_PUBLIC_TXID'] ?? '1970d5300134f94c325c7a41aae7ffbf18c7a58720f815e4a753fd784373fef0';
 const TESTNET_ADDR = 'utest1due6gq77zyyt85k0w6fdrwh3aaytc2pmvzfdszlvtp9dn8ap6xk98r2vjszuf27ec40memtv3m8zfvk6ad9r23ts5akp5c93mgvnnqx9';
@@ -50,8 +55,9 @@ describe.skipIf(!LIVE)('mainnet backend (live, read-only, no funds)', () => {
     console.log(`mainnet info: ${Date.now() - t} ms, tip ${String(info['blockHeight'])}, ${String(info['vendor'])} ${String(info['version'])}`);
     expect(info['network']).toBe('main');
     expect(info['chainName']).toBe('main');
-    expect(info['consensusBranchId']).toBe(NU6_3_BRANCH);
     expect(info['blockHeight']).toBeGreaterThan(MAINNET_NU6_3_HEIGHT);
+    expect([NU6_3_BRANCH, NU7_BRANCH]).toContain(info['consensusBranchId']);
+    expect(info['consensusBranchId']).toBe(expectedBranch(info['blockHeight'] as number));
   }, 60_000);
 
   it('refuses a testnet server for a mainnet wallet (chain mismatch), before any wallet is created', async () => {
@@ -71,7 +77,7 @@ describe.skipIf(!LIVE)('mainnet backend (live, read-only, no funds)', () => {
     expect(await b.height()).toBeGreaterThan(MAINNET_NU6_3_HEIGHT);
     const info = await b.info();
     expect(info['network']).toBe('main');
-    expect(info['consensusBranchId']).toBe(NU6_3_BRANCH);
+    expect([NU6_3_BRANCH, NU7_BRANCH]).toContain(info['consensusBranchId']);
   }, 180_000);
 
   it('hands out u1… Orchard-only addresses, byte-identical to toOrchardOnly', async () => {
