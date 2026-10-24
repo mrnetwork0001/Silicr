@@ -38,9 +38,29 @@ Every screen in the terminal has a **Leak Inspector** toggle. It shows the same 
 pnpm install && pnpm verify
 ```
 
-One command starts a complete Silicr stack in a temp dir (simulated chain, real relay, real crypto, a real training job), runs a deal, then checks every privacy claim against what each party actually holds: the relay stores only ciphertext, the chain shows only shielded action counts and fees, padding hides the provider count, forged directory entries and bids are rejected, a lying provider cannot pull payments early, a buyer that stops paying gets no unpaid work, and no secret is ever printed. It prints ✓/✗ per check with the evidence and exits non-zero on any failure. [docs/JUDGES.md](docs/JUDGES.md) maps each claim to its check and its tests, lists the known limits unsoftened, and says what is simulated and what is real.
+One command starts a complete Silicr stack in a temp dir (test harness: simulated chain, plus the real relay, real crypto and a real training job), runs a deal, then checks every privacy claim against what each party actually holds: the relay stores only ciphertext, the chain shows only shielded action counts and fees, padding hides the provider count, forged directory entries and bids are rejected, a lying provider cannot pull payments early, a buyer that stops paying gets no unpaid work, and no secret is ever printed. It prints ✓/✗ per check with the evidence and exits non-zero on any failure. [docs/JUDGES.md](docs/JUDGES.md) maps each claim to its check and its tests, lists the known limits unsoftened, and says what is simulated and what is real.
 
-`pnpm verify`, `pnpm test` and `silicr demo` never touch a real chain. The real-chain mode runs on Zcash mainnet (or testnet), with small amounts, unaudited.
+The app runs on Zcash testnet or mainnet; the simulated chain exists only inside the test suite (and `pnpm verify`, which says so at the top of its output). `pnpm verify` and `pnpm test` never touch a real chain, and nothing touches mainnet without an explicit `--network main`. Unaudited: keep amounts small.
+
+## Try it on testnet
+
+```bash
+pnpm silicr demo                    # relay + buyer + provider on Zcash testnet, runs the tiny-train deal
+pnpm --filter @silicr/web dev       # the terminal on http://localhost:7703 (press L for the Leak Inspector)
+```
+
+`silicr demo` (same as `silicr demo --network test`) opens the funded testnet wallets in `.silicr/wallets/test-buyer` and `.silicr/wallets/test-provider` (create them with `silicr init --network test` and fund them from a faucet), starts the relay and both daemons, and runs one deal with [examples/tiny-train](examples/tiny-train/README.md). `--network main` is refused for the demo: real money. Testnet blocks arrive about every 25 s since NU7 (mainnet activates NU7 at height 3,543,405, about Nov 3, 2026). The web terminal needs a running daemon: without one it shows how to start it on testnet or mainnet.
+
+## Public testnet demo
+
+A hosted testnet stack runs at **https://app.silicr.38-49-213-208.sslip.io** (the daemons are proxied under `/buyer/`, `/provider/` and `/relay/`). It is a shared wallet with testnet coins only. A daemon serves it with:
+
+| Flag | What it does |
+|---|---|
+| `--public-demo` | Refused on mainnet. `POST /api/rfqs` takes only `job: { preset: 'tiny-train' \| 'tiny-train-quick' }`, mapped to server-side example jobs (client paths, commands, images and env are ignored); `durationS` ≤ 900 s and `count` ≤ 1; one live request at a time (409 `busy`); 3 requests per IP per hour (429 `rate_limited`). Withdraw, `PUT /api/policy`, `POST /api/jobs/:id/stop` and migrate return 403 `demo_disabled`. Faults stay enabled: they are part of the demo. `GET /api/status` reports `publicDemo: true` and the presets. |
+| `--public-origin <url>` | Repeatable. An extra allowed Origin for CORS and an accepted `Host` (the URL's host name); the loopback rules stay as they are. |
+| `--trust-proxy` | Take the client IP for rate limits from `X-Forwarded-For` (only behind your own reverse proxy). |
+| `--host <addr>` | Bind address; anything other than loopback only together with `--public-origin`. |
 
 To fund a real-chain wallet, run `silicr wallet` (address and a ZIP 321 QR to scan with Zashi or any shielded wallet) or open **Wallet** in the web terminal; `silicr withdraw <u1…> <zec|all>` sends it back. Keys never leave your machine. See [docs/MAINNET.md](docs/MAINNET.md#funding-and-withdrawing).
 
