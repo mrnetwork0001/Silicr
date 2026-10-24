@@ -1,23 +1,19 @@
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { beforeAll, describe, expect, it } from 'vitest';
 import { PARTIES } from '../lib/facts';
 import { buildInspector, defaultTarget } from '../lib/inspector';
-import { MockWorld } from '../lib/mock/world';
-import { actions, getState } from '../lib/store';
+import { getState } from '../lib/store';
+import { loadDeal, type DealFixture } from './fixtures/load';
 import { buildTimeline, clampPlayhead, currentStep, markersUntil, nextStop, prevStop, stateUntil, type Timeline } from '../lib/timeline';
 
-let world: MockWorld;
+let deal: DealFixture;
 let rfqId: string;
 let now: number;
 
 beforeAll(() => {
-  actions.setMode('mock', 'forced');
-  world = new MockWorld();
-  world.start(); // seeds a finished demo request 47 minutes in the past, with every party's observations
+  deal = loadDeal(); // a finished deal as both daemons and the relay observer reported it
   now = Date.now();
   rfqId = defaultTarget(getState(), '/')!;
 });
-
-afterAll(() => world.stop());
 
 function timelineFor(): Timeline {
   const s = getState();
@@ -25,7 +21,7 @@ function timelineFor(): Timeline {
   return buildTimeline({ rfq: full.rfq, job: full.job, observations: PARTIES.flatMap((p) => full.columns[p].observations.map((o) => o.obs)), now });
 }
 
-describe('buildTimeline (mock replay of a finished request)', () => {
+describe('buildTimeline (a finished request from real daemon DTOs)', () => {
   it('has the request steps in order: RFQ, bid(s), accept, payments, close', () => {
     const t = timelineFor();
     expect(t.closed).toBe(true);

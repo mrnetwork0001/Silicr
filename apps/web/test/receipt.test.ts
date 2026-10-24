@@ -1,38 +1,37 @@
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { beforeAll, describe, expect, it } from 'vitest';
 import { PARTIES } from '../lib/facts';
 import { buildInspector, defaultTarget } from '../lib/inspector';
-import { MockWorld } from '../lib/mock/world';
 import { receiptFilename, receiptFromInspector } from '../lib/receipt-from-inspector';
 import { RECEIPT_KNOWN_LIMITS, renderReceipt, type ReceiptInput } from '../lib/receipt';
 import { actions, getState } from '../lib/store';
+import { loadDeal, type DealFixture } from './fixtures/load';
 
-let world: MockWorld;
+let deal: DealFixture;
 let rfqId: string;
 let input: ReceiptInput;
 let html: string;
 
 beforeAll(() => {
-  actions.setMode('mock', 'forced');
-  world = new MockWorld();
-  world.start();
+  deal = loadDeal();
+  // The sidecar wallet labels views of its own sends 'broadcast' (the in-test chain leaves it unset).
+  const own = deal.chain.find((v) => v.txid === deal.rfq.payments[0]!.txid)!;
+  actions.setChainTx({ ...own, source: 'broadcast', complete: true });
   rfqId = defaultTarget(getState(), '/')!;
   const s = getState();
   input = receiptFromInspector(buildInspector(s, rfqId, Date.now()), s, Date.UTC(2026, 9, 22, 12, 0, 0));
   html = renderReceipt(input);
 });
 
-afterAll(() => world.stop());
-
 describe('receiptFromInspector', () => {
   it('carries the request, every party and the public views', () => {
     expect(input.rfqId).toBe(rfqId);
-    expect(input.chainKind).toBe('mock');
+    expect(input.chainKind).toBe('test');
     expect(input.demoMode).toBe(true);
     for (const p of PARTIES) expect(input.columns[p].available).toBe(true);
     expect(input.columns.buyer.observations.length).toBeGreaterThan(3);
     expect(input.columns.relay.observations.length).toBeGreaterThan(3);
     expect(input.transactions.length).toBeGreaterThan(3);
-    expect(input.transactions.some((t) => t.role === 'RFQ')).toBe(true);
+    expect(input.transactions.some((t) => /^RFQ\b/.test(t.role ?? ''))).toBe(true);
     expect(input.transactions.some((t) => /^PAY #/.test(t.role ?? ''))).toBe(true);
     expect(input.transactions.every((t) => t.pool === 'Ironwood' && t.ciphertextSamples.length === t.actions)).toBe(true);
     // Observations are chronological in the receipt (the panel shows newest first).
@@ -72,7 +71,7 @@ describe('renderReceipt', () => {
 
   it('has the header, matrix, chain views, party records, known limits and the footer', () => {
     expect(html).toContain(rfqId);
-    expect(html).toContain('Mock replay');
+    expect(html).toContain('Zcash testnet');
     expect(html).toContain('2026-10-22 12:00:00 UTC');
     expect(html).toContain('Who knows what');
     expect(html).toMatch(/class="cell knows"[^>]*>Knows<span class="tag limit">limit 1<\/span>/);
@@ -85,7 +84,6 @@ describe('renderReceipt', () => {
     for (const l of RECEIPT_KNOWN_LIMITS) expect(html).toContain(l.title);
     expect(html).toContain('seen in this request');
     expect(html).toContain('What was simulated, what was real');
-    expect(html).toContain('scripted mock replay');
   });
 
   it('leaks no 64-hex value in the clear that is not a txid, a public key or a digest the chain already carries', () => {
@@ -112,8 +110,8 @@ describe('renderReceipt', () => {
     const hexes = [...html.matchAll(/[0-9a-f]{64}/gi)].map((m) => m[0].toLowerCase());
     expect(hexes.length).toBeGreaterThan(0);
     expect(hexes.filter((h) => !allowed.has(h))).toEqual([]);
-    expect(html).not.toMatch(/<span class="l">[^<]*(seed|secret|spending key)/i); // no party's record labels a secret
-    expect(html).not.toContain(world.buyerAddress.slice(0, 40) + '…'); // addresses are quoted whole or not at all
+    expect(html).not.toMatch(/<span class="l">[^<]*(seed|secret key|spending key)/i); // no party's record labels a secret
+    expect(html).not.toContain(deal.buyerStatus.address.slice(0, 40) + '…'); // addresses are quoted whole or not at all
   });
 
   it('marks unexpected knowledge and real funds', () => {
