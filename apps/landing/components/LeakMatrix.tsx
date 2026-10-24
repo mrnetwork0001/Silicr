@@ -116,8 +116,8 @@ export function LeakMatrix() {
   return (
     <div>
       {/* Wide: a real table. */}
-      <div className="hidden overflow-hidden rounded-2xl border border-line bg-panel md:block">
-        <table className="w-full table-fixed border-collapse text-left">
+      <div className="hidden overflow-hidden rounded-2xl border border-line bg-panel md:block max-[900px]:overflow-x-auto">
+        <table className="w-full table-fixed border-collapse text-left max-[900px]:min-w-[760px]">
           <caption className="sr-only">
             What each party learns about a buyer&apos;s job, from THREAT_MODEL.md. Knows means the party can read it in the clear.
           </caption>

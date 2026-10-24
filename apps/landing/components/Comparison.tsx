@@ -70,8 +70,8 @@ const ROWS: { what: string; cells: Record<Key, string> }[] = [
 export function Comparison() {
   return (
     <div>
-      <div className="hidden overflow-hidden rounded-2xl border border-line bg-panel md:block">
-        <table className="w-full table-fixed border-collapse text-left">
+      <div className="hidden overflow-hidden rounded-2xl border border-line bg-panel md:block max-[900px]:overflow-x-auto">
+        <table className="w-full table-fixed border-collapse text-left max-[900px]:min-w-[760px]">
           <caption className="sr-only">How Silicr compares with a central-matcher dark pool and a public DeAI marketplace</caption>
           <colgroup>
             <col className="w-[19%]" />
