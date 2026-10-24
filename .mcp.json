@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "silicr": {
+      "command": "node",
+      "args": [
+        "packages/mcp/bin/silicr-mcp.js",
+        "--max-total-zec",
+        "0.05"
+      ]
+    }
+  }
+}
