@@ -1,0 +1,27 @@
+{
+  "name": "@silicr/cli",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "test": "vitest run --passWithNoTests",
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "bin": {
+    "silicr": "./bin/silicr.js"
+  },
+  "dependencies": {
+    "@silicr/api": "workspace:^",
+    "@silicr/engine": "workspace:^",
+    "@silicr/protocol": "workspace:^",
+    "@silicr/relay": "workspace:^",
+    "@silicr/runner": "workspace:^",
+    "@silicr/zec": "workspace:^",
+    "commander": "^15.0.0",
+    "picocolors": "^1.1.1",
+    "tsx": "^4.23.15"
+  }
+}
