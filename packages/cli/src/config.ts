@@ -7,7 +7,7 @@ import { fileURLToPath } from 'node:url';
 export interface NodeConfig {
   v: 1;
   role: 'buyer' | 'provider';
-  /** main = Zcash mainnet (real ZEC; needs spendCap), test = Zcash testnet, memory = simulated. */
+  /** main = Zcash mainnet (real ZEC; needs spendCap), test = Zcash testnet; memory = the test suite's simulated chain only. */
   network: 'main' | 'test' | 'memory';
   relayUrl: string;
   port: number;
@@ -52,7 +52,7 @@ export function repoRoot(): string {
 }
 
 /** Where a party's data dir goes when --data is not given: mainnet and testnet wallets under .silicr/wallets/. */
-export function defaultDataDir(role: 'buyer' | 'provider', network: NodeConfig['network'] = 'memory'): string {
+export function defaultDataDir(role: 'buyer' | 'provider', network: NodeConfig['network'] = 'test'): string {
   if (network === 'main') return join(repoRoot(), '.silicr', 'wallets', `main-${role}`);
   if (network === 'test') return join(repoRoot(), '.silicr', 'wallets', role);
   return join(repoRoot(), '.silicr', role);

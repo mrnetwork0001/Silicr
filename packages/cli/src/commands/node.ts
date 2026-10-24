@@ -46,23 +46,31 @@ const proxyRow = (p: ResolvedProxy | null): [string, string] => [
   p ? pc.green(`${p.url} (SOCKS5: IP hidden from the relay and light-wallet server)`) : pc.yellow('none: direct connections, IP visible to the relay and light-wallet server'),
 ];
 
-/** main = Zcash mainnet (real ZEC, only with spend caps), test = Zcash testnet, memory = simulated. */
-function checkNetwork(n: string | undefined): Net {
+/**
+ * The simulated chain is test infrastructure: the CLI's own tests set SILICR_TEST_MEMORY_NETWORK=1
+ * to run `init`/`daemon` against it. Users only ever get Zcash testnet or mainnet.
+ */
+export const memoryNetworkAllowed = (): boolean => process.env['SILICR_TEST_MEMORY_NETWORK'] === '1';
+
+/** main = Zcash mainnet (real ZEC, only with spend caps), test = Zcash testnet. */
+export function checkNetwork(n: string | undefined): Net {
   if (n === 'mainnet') n = 'main';
-  if (n !== 'main' && n !== 'test' && n !== 'memory') fail('--network must be main (Zcash mainnet, real ZEC), test (Zcash testnet) or memory (simulated)');
+  if (n === 'testnet') n = 'test';
+  if (n === 'memory' && memoryNetworkAllowed()) return n;
+  if (n !== 'main' && n !== 'test') fail('--network must be test (Zcash testnet) or main (Zcash mainnet, real ZEC)');
   return n;
 }
 
 const networkRow = (n: Net): [string, string] => [
   'network',
-  n === 'memory' ? `${pc.yellow('memory')} (simulated chain, private to the daemon process)` : n === 'main' ? pc.red(MAINNET_TAG) : 'Zcash testnet',
+  n === 'memory' ? `${pc.yellow('memory')} (test harness: simulated chain, private to the daemon process)` : n === 'main' ? pc.red(MAINNET_TAG) : 'Zcash testnet',
 ];
 
 const capRow = (cap: SpendCap | null): [string, string] => [
   'spend cap',
   cap
     ? `per request ≤ ${zec(cap.perRfqZats)} · total ${zec(cap.totalZats)} ${pc.dim('(payments and fees, over every request this data dir makes)')}`
-    : pc.dim('none (fine on testnet and memory; mainnet requires one)'),
+    : pc.dim('none (fine on testnet; mainnet requires one)'),
 ];
 
 /**
@@ -210,8 +218,6 @@ export async function init(o: InitOptions): Promise<void> {
   } else if (network === 'test') {
     console.log(`  Fund it with ${pc.bold('shielded (Orchard) testnet ZEC only')}. Transparent and Sapling funds are refused:`);
     console.log(`  ${pc.dim('they would publish amounts and link this wallet to its funding source.')}`);
-  } else {
-    console.log(`  ${pc.dim('A memory-network daemon runs its own private simulated chain. To try buyer, provider and relay together, run `silicr demo`.')}`);
   }
   console.log(`  Next: ${pc.bold(`silicr daemon --data ${o.data ?? dataDir}`)}\n`);
 }
@@ -230,6 +236,117 @@ export interface DaemonCmdOptions {
   capPerRequest?: string;
   capTotal?: string;
   transport?: string;
+  /** Public testnet demo rules (refused on mainnet). */
+  publicDemo?: boolean;
+  /** Extra allowed Origins (and Host names) for a hosted deployment behind a reverse proxy. */
+  publicOrigin?: string[];
+  /** Use X-Forwarded-For (last entry) as the client IP for the public-demo rate limit. */
+  trustProxy?: boolean;
+  /** Bind address (default 127.0.0.1; anything else needs --public-origin). */
+  host?: string;
+}
+
+/** A started party: its wallet, node and daemon, and how to shut all three down. */
+export interface StartedParty {
+  role: Role;
+  network: Net;
+  node: BuyerNode | ProviderNode;
+  daemon: Awaited<ReturnType<typeof startDaemon>>;
+  backend: ZecBackend;
+  close(): Promise<void>;
+}
+
+export interface PartyOptions {
+  role: Role;
+  network: Net;
+  dataDir: string;
+  relayUrl: string;
+  port: number;
+  server?: string | undefined;
+  proxy: ResolvedProxy | null;
+  spendCap: SpendCap | null;
+  blobTransport: 'relay' | 'memo';
+  runner?: 'auto' | 'process' | 'docker';
+  demoMode: boolean;
+  policy?: ConstructorParameters<typeof ProviderNode>[0]['policy'];
+  daemon?: Omit<Parameters<typeof startDaemon>[0], 'node' | 'port'>;
+  log?: (m: string) => void;
+}
+
+/**
+ * Open the wallet, start the node and its HTTP daemon: what `silicr daemon` runs, and what
+ * `silicr demo` runs twice (buyer and provider) next to a relay.
+ */
+export async function startParty(o: PartyOptions): Promise<StartedParty> {
+  const { role, network, dataDir } = o;
+  let backend: ZecBackend;
+  let stopNet = () => undefined as void;
+  if (network !== 'memory') {
+    try {
+      backend = await openBackend(sidecarConfig(network, dataDir, o.server, o.proxy?.raw ?? null));
+    } catch (e) {
+      return fail(
+        `the Zcash ${network === 'main' ? 'mainnet' : 'testnet'} backend is not available: ${(e as Error).message}\n` +
+          '  It needs the zec-sidecar wallet (see packages/zec and docs/ZCASH_SETUP.md).',
+      );
+    }
+  } else {
+    const net = createMemoryNetwork({ blockTimeMs: 1000 });
+    stopNet = () => net.stop();
+    backend = net.wallet(role, { fundZats: 1_000_000_000n });
+    console.log(pc.yellow('  memory network (test harness): a private simulated chain inside this process.'));
+  }
+
+  const relay = relayClient(o.relayUrl, o.proxy ? { proxy: o.proxy.raw } : {});
+  const profile = defaultProfile(network);
+  const common = {
+    backend,
+    relay,
+    dataDir,
+    profile,
+    demoMode: o.demoMode,
+    log: o.log ?? ((m: string) => console.error(pc.dim(`  [${role}] ${m}`))),
+    ...(o.proxy ? { proxy: { url: o.proxy.url, kind: 'socks5' as const } } : {}),
+    ...(o.spendCap ? { spendCap: o.spendCap } : {}),
+    blobTransport: o.blobTransport,
+  };
+  let node: BuyerNode | ProviderNode;
+  if (role === 'buyer') {
+    node = new BuyerNode(common);
+  } else {
+    const runner = await createRunner({ mode: o.runner ?? 'auto', workDir: join(dataDir, 'runner') });
+    node = new ProviderNode({ ...common, runner, ...(o.policy ? { policy: o.policy } : {}) });
+  }
+  try {
+    await node.start();
+  } catch (e) {
+    await backend.close().catch(() => undefined);
+    stopNet();
+    return fail(`could not start the ${role}: ${(e as Error).message}`);
+  }
+  let d: Awaited<ReturnType<typeof startDaemon>>;
+  try {
+    d = await startDaemon({ ...(o.daemon ?? {}), node, port: o.port });
+  } catch (e) {
+    await (node as NodeBase).close().catch(() => undefined);
+    await backend.close().catch(() => undefined);
+    stopNet();
+    if ((e as NodeJS.ErrnoException).code === 'EADDRINUSE') return fail(`port ${o.port} is in use (another daemon?)`);
+    return fail(`could not start the ${role} daemon: ${(e as Error).message}`);
+  }
+  return {
+    role,
+    network,
+    node,
+    daemon: d,
+    backend,
+    async close() {
+      await d.close().catch(() => undefined);
+      await (node as NodeBase).close().catch(() => undefined);
+      await backend.close().catch(() => undefined);
+      stopNet();
+    },
+  };
 }
 
 export async function daemon(o: DaemonCmdOptions): Promise<void> {
@@ -249,60 +366,35 @@ export async function daemon(o: DaemonCmdOptions): Promise<void> {
   const spendCap = resolveCaps(network, role, o.capPerRequest, o.capTotal, cfg?.spendCap);
   const blobTransport = checkTransport(o.transport) ?? checkTransport(cfg?.transport) ?? 'relay';
   if (network === 'main') console.log(`\n  ${pc.red(MAINNET_TAG)}  ${pc.dim('real funds: every send is bounded by the spend caps below and needs your go-ahead in `silicr run`')}`);
-
-  let backend: ZecBackend;
-  let stopNet = () => undefined as void;
-  if (network !== 'memory') {
-    try {
-      backend = await openBackend(sidecarConfig(network, dataDir, server, proxy?.raw ?? null));
-    } catch (e) {
-      fail(
-        `the Zcash ${network === 'main' ? 'mainnet' : 'testnet'} backend is not available: ${(e as Error).message}\n` +
-          `  It needs the zec-sidecar wallet (see packages/zec). Until then, \`silicr demo\` runs everything on the simulated chain.`,
-      );
-    }
-  } else {
-    const net = createMemoryNetwork({ blockTimeMs: 1000 });
-    stopNet = () => net.stop();
-    backend = net.wallet(role, { fundZats: 1_000_000_000n });
-    console.log(pc.yellow('  memory network: a private simulated chain inside this process; no other party can reach it.'));
+  // Checked here too, before any wallet is opened (startDaemon refuses as well).
+  if (o.publicDemo && network === 'main') fail('--public-demo is refused on Zcash mainnet: a public demo lets anyone spend a shared wallet. Run it with --network test.');
+  const publicOrigins = o.publicOrigin ?? [];
+  if (o.host && !['127.0.0.1', '::1', 'localhost'].includes(o.host) && publicOrigins.length === 0) {
+    fail(`--host ${o.host} is not loopback: a non-loopback bind needs --public-origin <url> (a hosted deployment behind a reverse proxy)`);
   }
-
-  const relay = relayClient(relayUrl, proxy ? { proxy: proxy.raw } : {});
-  const profile = defaultProfile(network);
-  const common = {
-    backend,
-    relay,
+  const party = await startParty({
+    role,
+    network,
     dataDir,
-    profile,
-    demoMode: !!o.demoMode,
-    log: (m: string) => console.error(pc.dim(`  [${role}] ${m}`)),
-    ...(proxy ? { proxy: { url: proxy.url, kind: 'socks5' as const } } : {}),
-    ...(spendCap ? { spendCap } : {}),
+    relayUrl,
+    port,
+    server,
+    proxy,
+    spendCap,
     blobTransport,
-  };
-  let node: BuyerNode | ProviderNode;
-  if (role === 'buyer') {
-    node = new BuyerNode(common);
-  } else {
-    const mode = (o.runner ?? cfg?.runner ?? 'auto') as 'auto' | 'process' | 'docker';
-    const runner = await createRunner({ mode, workDir: join(dataDir, 'runner') });
-    node = new ProviderNode({ ...common, runner });
-  }
-  try {
-    await node.start();
-  } catch (e) {
-    fail(`could not start the ${role}: ${(e as Error).message}`);
-  }
-  let d: Awaited<ReturnType<typeof startDaemon>>;
-  try {
-    d = await startDaemon({ node, port });
-  } catch (e) {
-    if ((e as NodeJS.ErrnoException).code === 'EADDRINUSE') fail(`port ${port} is in use (another daemon?)`);
-    throw e;
-  }
+    runner: (o.runner ?? cfg?.runner ?? 'auto') as 'auto' | 'process' | 'docker',
+    demoMode: !!o.demoMode,
+    daemon: {
+      ...(o.host ? { host: o.host } : {}),
+      ...(publicOrigins.length ? { publicOrigins } : {}),
+      ...(o.trustProxy ? { trustProxy: true } : {}),
+      ...(o.publicDemo ? { publicDemo: true } : {}),
+    },
+  });
+  const { node, daemon: d } = party;
+  const profile = defaultProfile(network);
   const s = await node.status();
-  console.log(`\n  ${pc.green(`${role} daemon`)} listening on ${pc.bold(d.url)} ${pc.dim('(loopback only)')}\n`);
+  console.log(`\n  ${pc.green(`${role} daemon`)} listening on ${pc.bold(d.url)} ${pc.dim(o.host && o.host !== '127.0.0.1' ? `(bound to ${o.host})` : '(loopback only)')}\n`);
   const rows: [string, string][] = [
     networkRow(network),
     ['height', String(s.height)],
@@ -313,10 +405,14 @@ export async function daemon(o: DaemonCmdOptions): Promise<void> {
     transportRow(blobTransport),
   ];
   if (spendCap || network === 'main') rows.push(capRow(spendCap));
+  if (o.publicDemo) {
+    rows.push(['public demo', `${pc.yellow('on')} ${pc.dim('presets only (examples/tiny-train) · ≤ 15 min · 1 GPU · one live request · 3 requests per IP per hour · withdraw, policy, migrate and provider stop disabled')}`]);
+  }
+  if (publicOrigins.length) rows.push(['origins', `${publicOrigins.join(', ')} ${pc.dim(o.trustProxy ? '(X-Forwarded-For trusted for rate limits)' : '')}`]);
   if (network !== 'memory') {
     rows.push([
       'timing',
-      `${profile.intervalS} s intervals · PAY ${payLeadFor(profile, profile.intervalS)} s ahead · at most ${+maxExposureIntervals(profile).toFixed(3)} intervals at risk · ~${profile.blockTimeS} s blocks`,
+      `${profile.intervalS} s intervals · PAY ${payLeadFor(profile, profile.intervalS)} s ahead · at most ${+maxExposureIntervals(profile).toFixed(3)} intervals at risk · ~${s.blockTimeS} s blocks`,
     ]);
   }
   if (node instanceof ProviderNode) {
@@ -327,10 +423,7 @@ export async function daemon(o: DaemonCmdOptions): Promise<void> {
   kv(rows);
   console.log(`\n  ${pc.dim('Ctrl-C to stop.')}`);
   const stop = async () => {
-    await d.close().catch(() => undefined);
-    await (node as NodeBase).close().catch(() => undefined);
-    await backend.close().catch(() => undefined);
-    stopNet();
+    await party.close();
     process.exit(0);
   };
   process.on('SIGINT', () => void stop());
@@ -338,8 +431,8 @@ export async function daemon(o: DaemonCmdOptions): Promise<void> {
   await new Promise(() => undefined);
 }
 
-export async function relay(o: { port?: string; data?: string; observer?: boolean }): Promise<void> {
-  const r = await startRelay({ port: Number(o.port ?? 7700), host: '127.0.0.1', dataDir: resolve(o.data ?? '.silicr/relay'), observer: !!o.observer });
+export async function relay(o: { port?: string; data?: string; observer?: boolean; host?: string }): Promise<void> {
+  const r = await startRelay({ port: Number(o.port ?? 7700), host: o.host ?? '127.0.0.1', dataDir: resolve(o.data ?? '.silicr/relay'), observer: !!o.observer });
   console.log(`\n  ${pc.green('relay')} on ${pc.bold(r.url)} ${o.observer ? pc.dim('(observer feed on: /_observer)') : ''}\n  ${pc.dim('Ctrl-C to stop.')}`);
   const stop = async () => {
     await r.close().catch(() => undefined);

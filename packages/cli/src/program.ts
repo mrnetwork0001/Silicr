@@ -22,18 +22,23 @@ export function buildProgram(): Command {
       'after',
       '\nMainnet: only with `--network main` (real ZEC, small balances). A mainnet daemon needs spend caps in its config\n' +
         '(`silicr init --network main --cap-per-request <zec> --cap-total <zec>`), and `silicr run` asks for a go-ahead\n' +
-        '(or --yes) before committing real funds. Tests and `silicr demo` never touch mainnet. See docs/MAINNET.md.\n',
+        '(or --yes) before committing real funds. Tests and `silicr demo` never touch mainnet. See docs/MAINNET.md.\n' +
+        'Silicr runs on Zcash testnet (`--network test`) or mainnet (`--network main`); the simulated chain exists only inside the test suite.\n',
     );
 
   program
     .command('demo')
-    .description('zero-setup demo: simulated chain + relay (7700) + buyer (7701) + provider (7702), all in this process')
-    .option('--run', 'also rent the provider for examples/tiny-train and stream the whole deal until the result is in')
-    .option('--fast', 'faster simulated chain (250 ms blocks, 2 s intervals) and a shorter training run')
+    .description('testnet demo: relay (7700) + buyer (7701) + provider (7702) on Zcash testnet, using the funded wallets in .silicr/wallets/test-buyer and test-provider, then rent the provider for examples/tiny-train')
+    .option('--network <network>', 'test only: the demo spends from shared demo wallets, so mainnet (real ZEC) is refused', 'test')
+    .option('--no-run', 'start the stack and wait, without making the tiny-train request')
     .addOption(new Option('--runner <mode>', 'job runner').choices(['auto', 'process', 'docker']).default('auto'))
-    .option('--keep', 'with --run: keep everything running afterwards (for the web terminal)')
+    .option('--keep', 'keep everything running after the deal (for the web terminal)')
     .option('--port-base <port>', 'relay on this port, buyer on +1, provider on +2', '7700')
-    .option('--data <dir>', 'data dir, wiped at start (default .silicr/demo)')
+    .option('--buyer-data <dir>', 'buyer wallet dir (default .silicr/wallets/test-buyer)')
+    .option('--provider-data <dir>', 'provider wallet dir (default .silicr/wallets/test-provider)')
+    .option('--data <dir>', 'relay data dir, wiped at start (default .silicr/demo-test)')
+    .option('--server <host:port>', 'lightwalletd / Zaino for testnet (default: from the wallets\' config, else the sidecar default)')
+    .option('--proxy <url>', 'SOCKS5 proxy for the wallets\' and relay connections, e.g. socks5h://127.0.0.1:9050; also $SILICR_PROXY')
     .addOption(new Option('--transport <mode>', 'relay (default) or memo: run the deal relay-less, every blob in Zcash memos').choices(['relay', 'memo']))
     .action((o) => demo(o));
 
@@ -42,11 +47,9 @@ export function buildProgram(): Command {
     .description('create a data dir for one party: keys, wallet and config')
     .addOption(new Option('--role <role>', 'buyer or provider').choices(['buyer', 'provider']).makeOptionMandatory())
     .addOption(
-      new Option('--network <network>', 'main = Zcash mainnet (REAL ZEC; needs --cap-per-request and --cap-total), test = Zcash testnet, memory = simulated')
-        .choices(['main', 'test', 'memory'])
-        .default('test'),
+      new Option('--network <network>', 'test = Zcash testnet, main = Zcash mainnet (REAL ZEC; needs --cap-per-request and --cap-total)').default('test'),
     )
-    .option('--data <dir>', 'data dir, kept under .silicr/ and never committed (default .silicr/wallets/main-<role> on mainnet, .silicr/wallets/<role> on testnet, .silicr/<role> for memory)')
+    .option('--data <dir>', 'data dir, kept under .silicr/ and never committed (default .silicr/wallets/main-<role> on mainnet, .silicr/wallets/<role> on testnet)')
     .option('--cap-per-request <zec>', 'spend cap: the most one request may pay its provider, in ZEC (required on mainnet for a buyer)')
     .option('--cap-total <zec>', 'spend cap: the most this party may ever spend, payments and fees, in ZEC (required on mainnet)')
     .option('--relay <url>', 'relay URL', 'http://127.0.0.1:7700')
@@ -61,14 +64,18 @@ export function buildProgram(): Command {
     .description('run one party: the local daemon the CLI and web terminal talk to')
     .option('--data <dir>', 'data dir from `silicr init` (default: the init default for --role and --network)')
     .addOption(new Option('--role <role>', 'buyer or provider (default: from config)').choices(['buyer', 'provider']))
-    .addOption(new Option('--network <network>', 'main = Zcash mainnet (REAL ZEC; needs spend caps), test, memory (default: from config, else test)').choices(['main', 'test', 'memory']))
+    .addOption(new Option('--network <network>', 'test = Zcash testnet, main = Zcash mainnet (REAL ZEC; needs spend caps) (default: from config, else test)'))
     .option('--cap-per-request <zec>', 'spend cap per request in ZEC (default: from config; required on mainnet for a buyer)')
     .option('--cap-total <zec>', 'total spend cap in ZEC, payments and fees (default: from config; required on mainnet)')
     .option('--relay <url>', 'relay URL')
-    .option('--port <port>', 'port (loopback only)')
+    .option('--port <port>', 'port')
+    .option('--host <addr>', 'bind address (default 127.0.0.1; a non-loopback address needs --public-origin)')
     .option('--server <host:port>', 'lightwalletd / Zaino for testnet or mainnet')
     .addOption(new Option('--runner <mode>', 'provider job runner').choices(['auto', 'process', 'docker']))
     .option('--demo-mode', 'tell the web terminal every party runs on this machine')
+    .option('--public-demo', 'public testnet demo (refused on mainnet): requests run server-side presets only (examples/tiny-train), ≤ 15 min, 1 GPU, one live request, 3 per IP per hour; withdraw, policy, migrate and provider stop disabled')
+    .option('--public-origin <url>', 'hosted deployment: also allow this Origin and its host name in the Host header (repeatable), e.g. https://app.example.org', collect)
+    .option('--trust-proxy', 'behind a reverse proxy: take the client IP from X-Forwarded-For (last entry) for the public-demo rate limit')
     .option('--proxy <url>', 'SOCKS5 proxy for every outbound connection (relay and light-wallet server), e.g. socks5h://127.0.0.1:9050 for Tor; also $SILICR_PROXY; "none" forces direct')
     .addOption(new Option('--transport <mode>', 'relay or memo (default: from config, else relay): relay-less, job/logs/result in Zcash memos (small jobs, fees per memo)').choices(['relay', 'memo']))
     .action((o) => daemon(o));
@@ -77,6 +84,7 @@ export function buildProgram(): Command {
     .command('relay')
     .description('run a ciphertext-only relay (and the public provider directory)')
     .option('--port <port>', 'port', '7700')
+    .option('--host <addr>', 'bind address (default 127.0.0.1)')
     .option('--data <dir>', 'data dir', '.silicr/relay')
     .option('--observer', 'expose /_observer for the Leak Inspector')
     .action((o) => relay(o));

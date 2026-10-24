@@ -210,7 +210,7 @@ describe('silicr init / daemon on mainnet', () => {
     expect(defaultDataDir('buyer', 'main').split(sep).slice(-3)).toEqual(['.silicr', 'wallets', 'main-buyer']);
     expect(defaultDataDir('provider', 'main').split(sep).slice(-3)).toEqual(['.silicr', 'wallets', 'main-provider']);
     expect(defaultDataDir('buyer', 'test').split(sep).slice(-3)).toEqual(['.silicr', 'wallets', 'buyer']);
-    expect(defaultDataDir('provider').split(sep).slice(-2)).toEqual(['.silicr', 'provider']);
+    expect(defaultDataDir('provider').split(sep).slice(-3)).toEqual(['.silicr', 'wallets', 'provider']); // default network: testnet
   });
 
   it('daemon --network main refuses to start without caps, before any wallet is opened', async () => {

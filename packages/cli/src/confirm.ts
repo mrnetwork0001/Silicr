@@ -15,7 +15,7 @@ export function capLine(cap: StatusDto['spendCap']): string {
 export function networkLabel(network: string): string {
   if (network === 'main') return pc.red(MAINNET_TAG);
   if (network === 'test') return 'Zcash testnet';
-  if (network === 'memory') return pc.yellow('memory: SIMULATED chain');
+  if (network === 'memory') return pc.yellow('memory: SIMULATED chain (test harness only)');
   return network;
 }
 

@@ -80,8 +80,8 @@ export interface ReceiptTx {
 export interface ReceiptInput {
   rfqId: string;
   network: string | null;
-  /** 'mock' = the web terminal's scripted replay; 'memory' = simulated chain in real daemons; 'test' | 'main' = Zcash. */
-  chainKind: 'mock' | 'memory' | 'test' | 'main' | 'unknown';
+  /** 'memory' = the test suite's simulated chain in real daemons; 'test' | 'main' = Zcash. */
+  chainKind: 'memory' | 'test' | 'main' | 'unknown';
   demoMode: boolean;
   proxied: boolean;
   generatedAt: number;
@@ -171,8 +171,6 @@ function isHexish(v: string): boolean {
 
 function networkLabel(input: ReceiptInput): string {
   switch (input.chainKind) {
-    case 'mock':
-      return 'Mock replay (no chain, no daemons: the web terminal’s scripted demo)';
     case 'memory':
       return 'Simulated chain (memory network) with real relay and daemons';
     case 'test':
@@ -284,9 +282,6 @@ function simulatedVsReal(input: ReceiptInput): { simulated: string[]; real: stri
   const simulated: string[] = [];
   const real: string[] = [];
   switch (input.chainKind) {
-    case 'mock':
-      simulated.push('Everything: the chain, the relay, both daemons and every observation are the web terminal’s scripted mock replay. Nothing here was broadcast anywhere.');
-      break;
     case 'memory':
       simulated.push('The chain: a simulated in-process network (instant blocks, fake txids and note ciphertexts). No transaction reached Zcash.');
       real.push('The protocol: real RFQ, BID, ACCEPT, PAY and CLOSE memos, signatures and channel encryption; a real relay process and real buyer and provider daemons; the job really ran.');
@@ -302,9 +297,9 @@ function simulatedVsReal(input: ReceiptInput): { simulated: string[]; real: stri
     default:
       real.push('Network unknown: treat the chain views as unverified.');
   }
-  if (input.demoMode && input.chainKind !== 'mock') {
+  if (input.demoMode) {
     simulated.push('The vantage point: in demo mode every party runs on this machine, which is how this receipt can quote the provider’s and the relay’s own records. In production those live on other machines and cannot be fetched.');
-  } else if (input.chainKind !== 'mock') {
+  } else {
     real.push('Not in demo mode: the provider’s and the relay’s views were not fetched (they would be other machines’ data). Only this machine’s own view and the public chain are shown.');
   }
   if (input.proxied) real.push('This machine’s daemon routed its outbound traffic through a SOCKS5 proxy: any client IP in the relay’s records is the proxy’s address.');
@@ -344,7 +339,6 @@ export function renderReceipt(input: ReceiptInput): string {
 <h1>Silicr privacy receipt</h1>
 <p class="muted">What each party could learn about one GPU rental, from each party’s own records. Verdict: <strong style="color:${verdict === 'private' ? 'var(--ok)' : 'var(--bad)'}">${verdict === 'private' ? 'PRIVATE' : 'LEAK'}</strong>${verdict === 'private' ? ' — no party knows anything THREAT_MODEL.md does not already grant it.' : ` — ${esc(unexpected.join('; '))}.`}</p>
 ${input.chainKind === 'main' ? '<p class="real"><strong>Real ZEC.</strong> This request ran on Zcash mainnet: the amounts in the buyer and provider records are real funds.</p>' : ''}
-${input.chainKind === 'mock' ? '<p class="notice"><strong>Mock data.</strong> This receipt was generated from the web terminal’s scripted replay, not from daemons or a chain.</p>' : ''}
 <div class="card" style="margin-top:12px">
 <dl>
 <dt>Request</dt><dd class="mono">${esc(input.rfqId)}</dd>
