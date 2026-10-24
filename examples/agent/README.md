@@ -6,10 +6,10 @@ This walkthrough has an AI agent rent a GPU on Silicr, pay for it per interval i
 
 ```bash
 pnpm install
-pnpm silicr demo            # simulated chain + relay (7700) + buyer (7701) + provider (7702), one process
+pnpm silicr demo --keep     # Zcash testnet: relay (7700) + buyer (7701) + provider (7702), one process
 ```
 
-Leave it running. The buyer wallet holds 10 (simulated) ZEC; the provider `velvet-orca-…` offers `1× a100` from 0.6 ZEC/h. Optionally start the web terminal (`pnpm --filter @silicr/web dev`, http://localhost:7703) to watch the same deal in the Leak Inspector.
+Leave it running. It opens the funded testnet wallets in `.silicr/wallets/test-buyer` and `.silicr/wallets/test-provider` (testnet coins only; `--network main` is refused for the demo) and the provider offers `1× a100`. Optionally start the web terminal (`pnpm --filter @silicr/web dev`, http://localhost:7703) to watch the same deal in the Leak Inspector.
 
 ## 2. Give the agent the tools
 
@@ -26,7 +26,7 @@ Claude Code reads `.mcp.json` from the project root. Put this there:
 }
 ```
 
-`--max-total-zec` is the agent's hard ceiling for the session (default 0.05 ZEC; 0.2 here because the simulated demo provider charges 0.6 ZEC/h). For Claude Desktop, see the snippet in the package README.
+`--max-total-zec` is the agent's hard ceiling for the session (default 0.05 ZEC; 0.2 here to leave room for the demo provider's hourly price). For Claude Desktop, see the snippet in the package README.
 
 ## 3. The prompt
 
@@ -41,6 +41,8 @@ claude -p "<the prompt above>" --mcp-config .mcp.json --strict-mcp-config --allo
 ```
 
 ## 4. What the agent does
+
+The table and [TRANSCRIPT.md](TRANSCRIPT.md) were recorded on 2026-10-21 against the in-process test harness (simulated chain, 4 s intervals), before the app went testnet/mainnet only. On testnet the flow and the tool calls are the same; intervals are 300 s, blocks about 25 s, and the status reports `network: test`.
 
 | Step | Tool call | What comes back |
 |---|---|---|
