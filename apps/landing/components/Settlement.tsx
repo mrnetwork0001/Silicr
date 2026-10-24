@@ -2,7 +2,6 @@ import { CircleSlash, Pause, Square } from '@/components/icons';
 import type { ReactNode } from 'react';
 import {
   BUYER_EXPOSURE,
-  DEMO_DEFAULTS,
   EXAMPLE,
   MARGINAL_FEE_ZATS,
   TESTNET_DEFAULTS,
@@ -173,8 +172,7 @@ function Defaults() {
       </dl>
       <p className="mt-3 text-[13px] leading-relaxed text-muted">
         Providers set their own interval and grace. Mainnet uses a longer interval and lead, so fewer payments per hour;{' '}
-        <code className="code-inline text-fg">silicr status</code> shows the live values. The simulated demo compresses time:{' '}
-        {DEMO_DEFAULTS.intervalS} s intervals, paid {DEMO_DEFAULTS.payLeadS} s early, {DEMO_DEFAULTS.graceS} s grace.
+        <code className="code-inline text-fg">silicr status</code> shows the live values.
       </p>
     </div>
   );

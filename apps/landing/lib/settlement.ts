@@ -23,13 +23,6 @@ export const TESTNET_DEFAULTS = {
   graceS: 180,
 } as const;
 
-/** Zero-setup demo on the simulated chain (MEMORY_PROFILE). */
-export const DEMO_DEFAULTS = {
-  intervalS: 4,
-  payLeadS: 1,
-  graceS: 8,
-} as const;
-
 /**
  * Most a buyer can have paid for but not yet received: `I + lead` of compute, with
  * lead = min(payLeadS, I/4) (ARCHITECTURE.md §4, engine profile.ts). For the testnet defaults

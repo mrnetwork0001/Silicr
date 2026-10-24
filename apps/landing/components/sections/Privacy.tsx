@@ -110,7 +110,7 @@ export function Privacy() {
       </div>
       <p className="mt-6 max-w-3xl text-[14.5px] leading-relaxed text-muted">
         <span className="font-medium text-fg">Mainnet or testnet.</span> Silicr runs on Zcash mainnet (small balances, spend caps
-        required) or on testnet; the zero-setup demo uses a simulated chain. On mainnet its transactions sit among every other
+        required) or on testnet, where the demo runs. On mainnet its transactions sit among every other
         shielded Ironwood transaction on the network, a far larger crowd than testnet, which weakens the traffic-shape inference
         in limit 4. Real funds raise the stakes of every limit above, so keep wallets small.
       </p>

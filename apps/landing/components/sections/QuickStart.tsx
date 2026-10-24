@@ -21,7 +21,7 @@ export function QuickStart() {
   const demo: CommandLine[] = [
     ...(REPO_URL ? [{ cmd: `git clone ${REPO_URL} silicr && cd silicr`, note: 'get the code' }] : []),
     REPO_URL ? { cmd: 'pnpm install' } : { cmd: 'pnpm install', note: 'from the repo root' },
-    { cmd: 'pnpm silicr demo --run', note: 'simulated chain, relay, buyer and provider' },
+    { cmd: 'pnpm silicr demo', note: 'relay, buyer and provider on Zcash testnet; runs the tiny-train deal' },
     { cmd: 'pnpm --filter @silicr/web dev', note: 'in a second shell: the terminal, on http://127.0.0.1:7703' },
   ];
 
@@ -32,8 +32,8 @@ export function QuickStart() {
       title="Try it on your machine."
       lead={
         <p>
-          You need Node 22 or newer and pnpm 9. The demo needs nothing else: it runs a simulated chain, the relay, a buyer and
-          a provider locally, with time compressed. The real thing runs on Zcash mainnet with small balances, or on testnet.
+          You need Node 22 or newer, pnpm 9 and the Rust wallet in <Code>zec-sidecar/</Code>. The demo runs the relay, a buyer
+          and a provider locally on Zcash testnet, with testnet coins. The real thing runs on Zcash mainnet with small balances.
         </p>
       }
       tone="panel"
@@ -41,9 +41,16 @@ export function QuickStart() {
       <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
         <div className="min-w-0 lg:col-span-2">
           <CodeBlock
-            title="demo · simulated chain"
+            title="demo · Zcash testnet"
             lines={demo}
-            footer={<>No wallet setup, no coins, no Docker required. Open the terminal and press L to watch what each party sees.</>}
+            footer={
+              <>
+                Uses the funded testnet wallets in <Code>.silicr/wallets/test-buyer</Code> and{' '}
+                <Code>.silicr/wallets/test-provider</Code> (create and fund them with <Code>silicr init --network test</Code> and a
+                faucet). <Code>--network main</Code> is refused for the demo: real money. Open the terminal and press L to watch
+                what each party sees.
+              </>
+            }
           />
         </div>
         <CodeBlock

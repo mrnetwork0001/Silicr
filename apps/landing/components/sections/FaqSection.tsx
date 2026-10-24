@@ -20,8 +20,8 @@ const ITEMS = [
     a: (
       <>
         <p>
-          It can be. Silicr runs on Zcash mainnet or testnet through its own light wallet, and the zero-setup demo runs on a
-          simulated chain. Mainnet is opt-in: an explicit <code className="code-inline text-fg">--network main</code>, spend caps
+          It can be. Silicr runs on Zcash testnet or mainnet through its own light wallet, and the demo runs on testnet.
+          Mainnet is opt-in: an explicit <code className="code-inline text-fg">--network main</code>, spend caps
           in the daemon config (per request and in total; the daemon refuses to start without them) and small balances.
         </p>
         <p>

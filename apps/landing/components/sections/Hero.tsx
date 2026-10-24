@@ -73,12 +73,11 @@ export function Hero() {
 
             <p className="mt-5 max-w-[44rem] text-[14.5px] leading-relaxed text-muted">
               The terminal runs on your machine, next to your Silicr daemons.{' '}
-              <code className="code-inline text-fg">pnpm silicr demo --run</code> starts a zero-setup demo on a simulated
-              chain; with no daemons running, the terminal plays a scripted replay labelled{' '}
-              <span className="whitespace-nowrap font-mono text-[12.5px] font-semibold tracking-wide text-mock">MOCK DATA</span>.{' '}
+              <code className="code-inline text-fg">pnpm silicr demo</code> runs a whole deal on Zcash testnet: relay, buyer
+              and provider on your machine, paying in shielded testnet ZEC.{' '}
               <span className="text-fg">
-                Runs on Zcash mainnet or testnet through its own light wallet; the demo runs on a simulated chain. Unaudited
-                hackathon software: keep balances small.
+                Runs on Zcash testnet or mainnet through its own light wallet. Unaudited hackathon software: keep balances
+                small.
               </span>
             </p>
           </div>
