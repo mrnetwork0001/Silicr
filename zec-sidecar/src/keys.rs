@@ -12,7 +12,7 @@ use std::path::Path;
 
 use anyhow::{Context, anyhow, bail};
 use secrecy::ExposeSecret;
-use zcash_address::unified::{Encoding, Fvk, Ufvk};
+use zcash_address::unified::{Encoding, Fvk, Revision, Ufvk, Uitem};
 use zcash_keys::keys::{UnifiedFullViewingKey, UnifiedSpendingKey};
 use zcash_protocol::consensus::{Network, Parameters};
 use zip32::AccountId;
@@ -22,7 +22,7 @@ use crate::remote::chain_name;
 /// The Orchard-only UFVK encoding of `ufvk` for `params`' network.
 pub fn orchard_only_ufvk(params: &Network, ufvk: &UnifiedFullViewingKey) -> anyhow::Result<String> {
     let fvk = ufvk.orchard().ok_or_else(|| anyhow!("wallet has no Orchard viewing key"))?;
-    let container = Ufvk::try_from_items(vec![Fvk::Orchard(fvk.to_bytes())])
+    let container = Ufvk::try_from_items(Revision::R0, vec![Uitem::Data(Fvk::Orchard(fvk.to_bytes()))])
         .map_err(|e| anyhow!("encoding the viewing key failed: {e}"))?;
     Ok(container.encode(&params.network_type()))
 }

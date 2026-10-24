@@ -135,7 +135,7 @@ fn actions_view(
             ciphertext_samples: b
                 .actions()
                 .iter()
-                .map(|a| hex::encode(&a.encrypted_note().enc_ciphertext[..32]))
+                .map(|a| hex::encode(&a.encrypted_note().enc_ciphertext.as_ref()[..32]))
                 .collect(),
         },
     }
@@ -321,13 +321,27 @@ mod tests {
                     nullifier: a.nullifier().to_bytes().to_vec(),
                     cmx: a.cmx().to_bytes().to_vec(),
                     ephemeral_key: a.encrypted_note().epk_bytes.to_vec(),
-                    ciphertext: a.encrypted_note().enc_ciphertext[..52].to_vec(),
+                    ciphertext: a.encrypted_note().enc_ciphertext.as_ref()[..52].to_vec(),
                 })
                 .collect(),
             ..Default::default()
         };
         let block = CompactBlock { height, time, vtx: vec![ctx.clone()], ..Default::default() };
         (block, ctx)
+    }
+
+    /// Raw transactions are parsed under the branch for their height; NU7 (ZIP 259) must be known
+    /// on testnet (from 4,465,026) and mainnet (from 3,543,405), with Ironwood (NU6.3) before it.
+    #[test]
+    fn branch_ids_cover_nu7() {
+        let (test, main) = (Network::TestNetwork, Network::MainNetwork);
+        assert_eq!(BranchId::for_height(&test, BlockHeight::from(4_465_025)), BranchId::Nu6_3);
+        assert_eq!(BranchId::for_height(&test, BlockHeight::from(4_465_026)), BranchId::Nu7);
+        assert_eq!(BranchId::for_height(&main, BlockHeight::from(3_428_143)), BranchId::Nu6_3);
+        assert_eq!(BranchId::for_height(&main, BlockHeight::from(3_543_404)), BranchId::Nu6_3);
+        assert_eq!(BranchId::for_height(&main, BlockHeight::from(3_543_405)), BranchId::Nu7);
+        assert_eq!(u32::from(BranchId::Nu7), 0x7719_0ad9);
+        assert_eq!(u32::from(BranchId::Nu6_3), 0x37a5_165b);
     }
 
     #[test]

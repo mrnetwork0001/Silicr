@@ -21,7 +21,14 @@ use anyhow::{Context, anyhow, bail};
 use bip0039::{Count, English, Mnemonic};
 use futures_util::TryStreamExt;
 use orchard::tree::MerkleHashOrchard;
-use rand::rngs::OsRng;
+use rand::rand_core::UnwrapErr;
+use rand::rngs::SysRng;
+
+/// The OS RNG; `UnwrapErr` turns rand 0.10's fallible `SysRng` into the infallible `Rng` the wallet DB needs.
+type OsRng = UnwrapErr<SysRng>;
+fn os_rng() -> OsRng {
+    UnwrapErr(SysRng)
+}
 use secrecy::{ExposeSecret, SecretVec, Zeroize};
 use serde::{Deserialize, Serialize};
 use tracing::{debug, info, warn};
@@ -406,7 +413,7 @@ impl Wallet {
         }
 
         let db_path = opts.data_dir.join(DB_FILE);
-        let mut db = WalletDb::for_path(&db_path, params, SystemClock, OsRng)?;
+        let mut db = WalletDb::for_path(&db_path, params, SystemClock, os_rng())?;
         {
             use std::os::unix::fs::PermissionsExt;
             let _ = fs::set_permissions(&db_path, fs::Permissions::from_mode(0o600));
@@ -488,7 +495,7 @@ impl Wallet {
         for suffix in ["", "-journal", "-wal", "-shm"] {
             let _ = fs::remove_file(format!("{}{suffix}", db_path.display()));
         }
-        let mut db = WalletDb::for_path(&db_path, *params, SystemClock, OsRng)?;
+        let mut db = WalletDb::for_path(&db_path, *params, SystemClock, os_rng())?;
         init_wallet_db(&mut db, None).map_err(|e| anyhow!("initialising wallet database: {e:?}"))?;
         let account = db.import_account_ufvk("silicr-watch", &ufvk, &birthday, AccountPurpose::ViewOnly, Some("silicr export-viewing-key"))?;
 
@@ -550,7 +557,7 @@ impl Wallet {
         for suffix in ["", "-journal", "-wal", "-shm"] {
             let _ = fs::remove_file(format!("{}{suffix}", db_path.display()));
         }
-        let mut db = WalletDb::for_path(&db_path, *params, SystemClock, OsRng)?;
+        let mut db = WalletDb::for_path(&db_path, *params, SystemClock, os_rng())?;
         init_wallet_db(&mut db, None).map_err(|e| anyhow!("initialising wallet database: {e:?}"))?;
         let (account, _) = db.create_account("silicr", &seed, &birthday, None)?;
 
@@ -1257,6 +1264,8 @@ impl Wallet {
             create_proposed_transactions::<_, _, std::convert::Infallible, _, std::convert::Infallible, _>(
                 &mut self.db,
                 &self.params,
+                &SystemClock,
+                &mut os_rng(),
                 &prover,
                 &prover,
                 &SpendingKeys::from_unified_spending_key(usk),

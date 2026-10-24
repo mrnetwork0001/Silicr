@@ -2,13 +2,14 @@
 name = "zec-sidecar"
 version = "0.1.0"
 edition = "2024"
-rust-version = "1.88"
+rust-version = "1.89"
 license = "MIT OR Apache-2.0"
 publish = false
 description = "Silicr's Zcash testnet light wallet: Orchard-receiver-only, Ironwood/Orchard-protocol spends only, JSON lines over stdio"
 
-# Versions track the released librustzcash crates that zcash-devtool builds against
-# (Cargo.lock was seeded from zcash-devtool@5a26ee85 so the resolution is known-good).
+# Versions track the released librustzcash crates (the 2026-10-21 set: zcash_client_backend 0.25,
+# zcash_primitives 0.31, zcash_protocol 0.11), which know NU7 (ZIP 259, branch id 0x77190ad9):
+# testnet from 4,465,026, mainnet from 3,543,405. Upgrade the whole set together.
 [dependencies]
 anyhow = "1"
 bip0039 = { version = "0.14", features = ["std"] }
@@ -19,7 +20,7 @@ hex = "0.4"
 hyper-util = { version = "0.1", features = ["tokio"] }
 libc = "0.2"
 prost = "0.14"
-rand = "0.8"
+rand = { version = "0.10", default-features = false, features = ["std", "sys_rng"] }
 rusqlite = { version = "0.37", features = ["bundled"] }
 secrecy = "0.8"
 serde = { version = "1", features = ["derive"] }
@@ -31,17 +32,17 @@ tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
 
 # Zcash (no transparent-inputs, no pczt, no tor: this wallet never touches transparent funds)
-orchard = { version = "0.15.0", default-features = false, features = ["circuit"] }
-sapling = { package = "sapling-crypto", version = "0.7" }
-zcash_address = "0.13.0"
-zcash_client_backend = { version = "0.24.0", features = ["lightwalletd-tonic-tls-webpki-roots", "orchard"] }
-zcash_client_sqlite = { version = "0.22.0", features = ["orchard"] }
-zcash_keys = { version = "0.16.1", features = ["orchard", "sapling"] }
-zcash_primitives = "0.30.0"
-zcash_proofs = { version = "0.30.0", features = ["bundled-prover"] }
-zcash_protocol = "0.10.3"
-zip32 = "0.2"
-zip321 = "0.9"
+orchard = { version = "0.16.0", default-features = false, features = ["circuit"] }
+sapling = { package = "sapling-crypto", version = "0.9" }
+zcash_address = "0.14.0"
+zcash_client_backend = { version = "0.25.0", features = ["lightwalletd-tonic-tls-webpki-roots", "orchard"] }
+zcash_client_sqlite = { version = "0.23.0", features = ["orchard"] }
+zcash_keys = { version = "0.17.0", features = ["orchard", "sapling"] }
+zcash_primitives = "0.31.0"
+zcash_proofs = { version = "0.31.0", features = ["bundled-prover"] }
+zcash_protocol = "0.11.0"
+zip32 = "0.3"
+zip321 = "0.10"
 
 [profile.release]
 # Proving is the hot path; keep debug assertions off but symbols on for useful backtraces.

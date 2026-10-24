@@ -32,7 +32,7 @@ pub fn orchard_only(params: &Network, s: &str) -> Result<(String, orchard::Addre
 /// The Orchard-only unified address for an Orchard receiver. Deterministic, so the same
 /// receiver always yields the same string (used to label received notes).
 pub fn encode_orchard(params: &Network, o: orchard::Address) -> String {
-    UnifiedAddress::from_receivers(Some(o), None, None)
+    UnifiedAddress::from_receivers(Some(o), None, None, None, None)
         .expect("an Orchard receiver is a shielded receiver")
         .encode(params)
 }
