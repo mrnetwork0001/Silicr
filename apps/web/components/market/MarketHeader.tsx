@@ -32,10 +32,10 @@ export function MarketHeader({ stats }: { stats: { label: string; value: ReactNo
         </div>
         <div className="grid w-full grid-cols-3 gap-2.5 sm:w-auto">
           {stats.map((s) => (
-            <div key={s.label} className="die-tile min-w-0 rounded-lg px-3 py-2 sm:min-w-[150px]">
+            <div key={s.label} className="die-tile min-w-0 rounded-lg px-3 py-2 sm:min-w-[150px] max-[600px]:px-2.5">
               <span className="die-pad right-2 top-2" aria-hidden />
               <div className="section-label truncate pr-3 text-[10px] text-muted">{s.label}</div>
-              <div className="mt-0.5 truncate text-lg font-semibold tabular-nums text-fg">{s.value}</div>
+              <div className="mt-0.5 truncate text-lg font-semibold tabular-nums text-fg max-[600px]:whitespace-normal max-[600px]:text-[15px] max-[600px]:leading-snug max-[600px]:[overflow-wrap:anywhere]">{s.value}</div>
               {s.sub && <div className="truncate text-2xs text-faint">{s.sub}</div>}
             </div>
           ))}

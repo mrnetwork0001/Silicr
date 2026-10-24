@@ -140,11 +140,11 @@ function DepositCard({ wallet }: { wallet: WalletDto }) {
       actions={<QrCode className="size-4 text-faint" aria-hidden />}
       bodyClassName="flex flex-col gap-4 p-4"
     >
-      <div className="flex flex-col items-center gap-4 sm:flex-row sm:items-start">
+      <div className="flex flex-col items-center gap-4 sm:flex-row sm:items-start max-[900px]:flex-col! max-[900px]:items-center!">
         <div className="shrink-0 rounded-xl border border-line-strong bg-white p-1.5 shadow-[0_0_28px_rgba(238,127,32,0.18)]">
-          <Qr text={uri} className="size-48 sm:size-52" label={`ZIP 321 payment request: ${uri}`} />
+          <Qr text={uri} className="size-48 sm:size-52 max-[900px]:size-[240px]!" label={`ZIP 321 payment request: ${uri}`} />
         </div>
-        <div className="flex min-w-0 flex-1 flex-col gap-3">
+        <div className="flex min-w-0 flex-1 flex-col gap-3 max-[900px]:w-full">
           <p className="text-sm leading-relaxed text-body">
             Scan with your Zcash wallet (Zashi, Ywallet, any shielded wallet). Funds are spendable after{' '}
             <strong className="font-semibold text-fg">
@@ -166,14 +166,14 @@ function DepositCard({ wallet }: { wallet: WalletDto }) {
       <div className="rounded-lg border border-line bg-sunken p-3">
         <div className="mb-1 flex items-center justify-between gap-2">
           <span className="section-label text-[10px] text-muted">Orchard-only unified address</span>
-          <CopyButton text={wallet.address} label="Copy address" />
+          <CopyButton text={wallet.address} label="Copy address" className="max-[900px]:size-11 max-[900px]:rounded-full max-[900px]:border max-[900px]:border-line" />
         </div>
         <p className="break-all font-mono text-xs leading-relaxed text-secondary">{wallet.address}</p>
         <div className="mt-2 flex items-center justify-between gap-2 border-t border-line pt-2">
           <span className="min-w-0 truncate font-mono text-2xs text-faint" title={uri}>
             {uri.length > 48 ? `${uri.slice(0, 26)}…${uri.slice(-18)}` : uri}
           </span>
-          <CopyButton text={uri} label="Copy ZIP 321 URI" />
+          <CopyButton text={uri} label="Copy ZIP 321 URI" className="max-[900px]:size-11 max-[900px]:rounded-full max-[900px]:border max-[900px]:border-line" />
         </div>
       </div>
       <p className="flex gap-1.5 text-2xs leading-relaxed text-faint">

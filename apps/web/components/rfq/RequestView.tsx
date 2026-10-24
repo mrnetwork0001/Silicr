@@ -80,14 +80,17 @@ export function RequestView({ id }: { id: string }) {
       <Timeline rfq={rfq} height={buyerStatus?.height ?? null} />
       {rfq.state === 'failed' && <ErrorNote title="This request failed">{rfq.error ?? 'No error detail from the daemon.'}</ErrorNote>}
 
+      {/* ≤ 900px: both columns flatten into one list so the cost meter can sit first, right under the timeline. */}
       <div className="grid items-start gap-4 xl:grid-cols-[minmax(0,1fr)_420px]">
-        <div className="min-w-0 space-y-4">
+        <div className="min-w-0 space-y-4 max-[900px]:contents max-[900px]:space-y-0">
           <BidTable rfq={rfq} explorer={explorer} />
           {accepted && <LogTail lines={logs ?? rfq.logTail} live={live} />}
           {accepted && <Payments payments={rfq.payments} explorer={explorer} />}
         </div>
-        <div className="min-w-0 space-y-4">
-          <CostMeter rfq={rfq} now={now} />
+        <div className="min-w-0 space-y-4 max-[900px]:contents max-[900px]:space-y-0">
+          <div className="min-w-0 max-[900px]:order-first">
+            <CostMeter rfq={rfq} now={now} />
+          </div>
           {accepted && <Heartbeats heartbeats={rfq.heartbeats} now={now} running={rfq.state === 'running'} withheld={!!job?.heartbeatsStopped} />}
           <ResultCard rfq={rfq} />
           <ChainCard rfq={rfq} />

@@ -97,7 +97,7 @@ export function ProviderTable({
           Providers appear here after <code className="font-mono">silicr provide</code> publishes a signed entry.
         </Empty>
       ) : view === 'chips' ? (
-        <div className="grid grid-cols-[repeat(auto-fill,minmax(232px,1fr))] gap-4 p-4">
+        <div className="grid grid-cols-[repeat(auto-fill,minmax(232px,1fr))] gap-4 p-4 max-[900px]:grid-cols-2 max-[900px]:gap-3 max-[900px]:p-3 max-[600px]:grid-cols-1">
           {rows.map((row) => (
             <ProviderChip key={row.p.providerId} row={row} selected={selected.has(row.p.providerId)} onToggle={onToggle} now={now} />
           ))}

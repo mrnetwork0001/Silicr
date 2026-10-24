@@ -27,13 +27,13 @@ export function WalletDrawer({ open, onClose }: { open: boolean; onClose: () => 
         role="dialog"
         aria-modal="true"
         aria-label="Wallet"
-        className="absolute inset-y-0 right-0 flex w-full max-w-[560px] flex-col overflow-y-auto border-l border-line bg-panel/95 p-4 shadow-[-24px_0_60px_rgba(0,0,0,0.6)] outline-none sm:p-5"
+        className="absolute inset-y-0 right-0 flex w-full max-w-[560px] flex-col overflow-y-auto border-l border-line bg-panel/95 p-4 shadow-[-24px_0_60px_rgba(0,0,0,0.6)] outline-none sm:p-5 max-[900px]:pb-[calc(16px+env(safe-area-inset-bottom))]"
       >
         <div className="mb-3 flex items-center justify-end gap-1">
           <Link href="/wallet" onClick={onClose} className="inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-2xs font-semibold text-secondary hover:text-white">
             Full page <ArrowUpRight className="size-3" aria-hidden />
           </Link>
-          <button type="button" onClick={onClose} className="inline-flex size-7 items-center justify-center rounded-full text-secondary hover:bg-hover hover:text-white" aria-label="Close wallet">
+          <button type="button" onClick={onClose} className="inline-flex size-7 items-center justify-center rounded-full text-secondary hover:bg-hover hover:text-white max-[900px]:size-10" aria-label="Close wallet">
             <X className="size-4" aria-hidden />
           </button>
         </div>

@@ -43,7 +43,7 @@ export function SealedPreview({
   const hex = useMemo(() => fakeHex(seed, 96), [seed]);
   const outputs = est?.paddedOutputs ?? 4;
   return (
-    <div className="grid gap-2 sm:grid-cols-2">
+    <div className="grid gap-2 sm:grid-cols-2 max-[900px]:grid-cols-1!">
       <div className="die-tile min-w-0 rounded-lg p-2.5">
         <div className="flex items-center gap-1.5 text-2xs font-semibold text-muted">
           <EyeOff className="size-3.5" aria-hidden /> What the chain sees
