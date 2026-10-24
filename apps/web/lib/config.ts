@@ -7,22 +7,20 @@ import type { NetworkName } from '@silicr/api';
 
 const trimSlash = (u: string) => u.replace(/\/+$/, '');
 
-function flag(v: string | undefined): boolean {
-  return v === '1' || v === 'true' || v === 'yes';
-}
-
+/**
+ * Daemon base URLs may carry a path prefix behind a reverse proxy, e.g.
+ * NEXT_PUBLIC_BUYER_URL=https://host/buyer → https://host/buyer/api/status.
+ */
 export const config = {
   buyerUrl: trimSlash(process.env.NEXT_PUBLIC_BUYER_URL || 'http://127.0.0.1:7701'),
   providerUrl: trimSlash(process.env.NEXT_PUBLIC_PROVIDER_URL || 'http://127.0.0.1:7702'),
   relayUrl: trimSlash(process.env.NEXT_PUBLIC_RELAY_URL || 'http://127.0.0.1:7700'),
   /** The public landing page; the logo in the header links back to it. Empty disables the link. */
   landingUrl: process.env.NEXT_PUBLIC_LANDING_URL ?? 'http://127.0.0.1:7704',
-  /** Force the scripted mock replay. `?mock=1` on any URL does the same at runtime. */
-  forceMock: flag(process.env.NEXT_PUBLIC_SILICR_MOCK),
   /**
    * Block-explorer link templates, one per real network; `{txid}` is replaced. Explorers are
    * third parties: opening a link tells them which txid you're looking at, from your browser's
-   * IP (a daemon-side SOCKS5 proxy does not cover the browser). No link on simulated chains.
+   * IP (a daemon-side SOCKS5 proxy does not cover the browser). No link on any other network.
    */
   explorerTxUrlMain: process.env.NEXT_PUBLIC_EXPLORER_TX_URL_MAIN || 'https://mainnet.zcashexplorer.app/transactions/{txid}',
   /** NEXT_PUBLIC_EXPLORER_TX_URL is the older name for the testnet template; still honoured. */
@@ -49,10 +47,11 @@ export function explorerTxLink(txid: string, network: NetworkName | null | undef
   return template.replace('{txid}', encodeURIComponent(txid));
 }
 
-/** "127.0.0.1:7701" from "http://127.0.0.1:7701". */
+/** "127.0.0.1:7701" from "http://127.0.0.1:7701"; "host/buyer" from "https://host/buyer" (path prefix kept). */
 export function hostOf(url: string): string {
   try {
-    return new URL(url).host;
+    const u = new URL(url);
+    return u.host + u.pathname.replace(/\/+$/, '');
   } catch {
     return url;
   }

@@ -9,6 +9,7 @@ import type {
   DaemonEvent,
   LeakObservation,
   NewRfqRequest,
+  PresetRfqRequest,
   ProviderDto,
   ProviderFault,
   ProviderJobDto,
@@ -24,7 +25,7 @@ import type {
 } from '@silicr/api';
 import { ApiError, DaemonClient, errorMessage } from './client';
 import { config } from './config';
-import { saveBlob, type Driver, type InspectorTarget, type ProbeResult } from './driver';
+import { UNSUPPORTED_NETWORK, isSupportedNetwork, saveBlob, type Driver, type InspectorTarget, type ProbeResult } from './driver';
 import { actions, getState } from './store';
 
 type Role = 'buyer' | 'provider';
@@ -80,6 +81,12 @@ export class RealDriver implements Driver {
   // Connectivity
 
   private markOnline(role: Role, status: StatusDto): void {
+    if (!isSupportedNetwork(status.network)) {
+      // A daemon restarted on another network (e.g. the test suite's simulated chain): stop here.
+      this.stop();
+      actions.setMode('unsupported', `${UNSUPPORTED_NETWORK} (the ${role} daemon reports "${String(status.network)}")`);
+      return;
+    }
     const was = this.online[role];
     this.online[role] = true;
     this.backoff[role] = STATUS_EVERY_MS;
@@ -257,7 +264,7 @@ export class RealDriver implements Driver {
     }
   }
 
-  async createRfq(req: NewRfqRequest): Promise<{ rfqId: string }> {
+  async createRfq(req: NewRfqRequest | PresetRfqRequest): Promise<{ rfqId: string }> {
     // Building and proving a shielded transaction can take a while on a real chain.
     const res = await this.requireBuyer().post<{ rfqId: string }>('/api/rfqs', req, { timeoutMs: 120_000 });
     if (!res?.rfqId) throw new ApiError('Buyer daemon returned no rfqId', 0, 'bad_response');

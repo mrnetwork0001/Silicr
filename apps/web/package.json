@@ -5,7 +5,6 @@
   "type": "module",
   "scripts": {
     "dev": "next dev -p 7703",
-    "dev:mock": "NEXT_PUBLIC_SILICR_MOCK=1 next dev -p 7703",
     "build": "next build",
     "start": "next start -p 7703",
     "typecheck": "tsc --noEmit -p tsconfig.json",

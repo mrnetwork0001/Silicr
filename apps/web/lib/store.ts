@@ -1,7 +1,7 @@
 /**
  * Client-side store: one module-level immutable state object, read through
- * useSyncExternalStore. Both the real driver (daemons over HTTP/SSE) and the
- * mock replay write into it through `actions`; components never fetch directly.
+ * useSyncExternalStore. The driver (daemons over HTTP/SSE) writes into it
+ * through `actions`; components never fetch directly.
  *
  * Selectors passed to useSilicr must return existing references or primitives
  * (derive arrays with useMemo), otherwise React re-renders forever.
@@ -20,8 +20,12 @@ import type {
 } from '@silicr/api';
 import type { SseState } from './client';
 
-export type Mode = 'probing' | 'mock' | 'real';
-export type MockReason = 'forced' | 'unreachable';
+/**
+ * probing: first contact. real: at least one daemon answers on Zcash testnet or mainnet.
+ * offline: no daemon answers (the shell shows how to start one). unsupported: a daemon answers on a
+ * network the terminal doesn't run against (e.g. `memory`); `modeError` says which.
+ */
+export type Mode = 'probing' | 'offline' | 'unsupported' | 'real';
 export type DaemonRole = 'buyer' | 'provider' | 'relay';
 export type ConnStatus = 'unknown' | 'online' | 'offline';
 
@@ -35,7 +39,8 @@ export interface DaemonConn {
 
 export interface State {
   mode: Mode;
-  mockReason: MockReason | null;
+  /** Why the terminal is not running (offline / unsupported). */
+  modeError: string | null;
   conn: Record<DaemonRole, DaemonConn>;
   buyerStatus: StatusDto | null;
   providerStatus: StatusDto | null;
@@ -75,7 +80,7 @@ function conn(url: string): DaemonConn {
 export function initialState(urls: Record<DaemonRole, string> = { buyer: '', provider: '', relay: '' }): State {
   return {
     mode: 'probing',
-    mockReason: null,
+    modeError: null,
     conn: { buyer: conn(urls.buyer), provider: conn(urls.provider), relay: conn(urls.relay) },
     buyerStatus: null,
     providerStatus: null,
@@ -187,8 +192,8 @@ export const actions = {
     });
   },
 
-  setMode(mode: Mode, mockReason: MockReason | null = null): void {
-    setState((s) => (s.mode === mode && s.mockReason === mockReason ? s : { ...s, mode, mockReason }));
+  setMode(mode: Mode, modeError: string | null = null): void {
+    setState((s) => (s.mode === mode && s.modeError === modeError ? s : { ...s, mode, modeError }));
   },
 
   setConn(role: DaemonRole, patch: Partial<DaemonConn>): void {
@@ -344,3 +349,8 @@ export const actions = {
     setState((s) => ({ ...s, inspector: { ...s.inspector, open: !s.inspector.open } }));
   },
 };
+
+/** A public testnet demo daemon (`silicr daemon --public-demo`): shared wallet, presets only, no withdraw or policy changes. */
+export function isPublicDemo(s: State): boolean {
+  return s.mode === 'real' && (!!s.buyerStatus?.publicDemo || !!s.providerStatus?.publicDemo);
+}

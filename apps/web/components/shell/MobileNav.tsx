@@ -9,7 +9,7 @@ import { formatHeight, networkLabel, zecString } from '@/lib/format';
 import { useNow } from '@/lib/hooks';
 import { spendCapSummary } from '@/lib/market';
 import { actions, useSilicr } from '@/lib/store';
-import { Badge, Spinner } from '../ui';
+import { Spinner } from '../ui';
 import { ConnectionDetails, RealZecChip, useChainInfo } from './ConnectionStatus';
 import { LogoMark } from './Logo';
 
@@ -57,11 +57,7 @@ export function NetworkChip({ onClick }: { onClick: () => void }) {
       aria-label="Connections and network"
     >
       {mode === 'probing' && <Spinner className="size-3.5" />}
-      {mode === 'mock' && (
-        <Badge tone="mock" className="font-mono tracking-wide max-[389px]:hidden">
-          MOCK
-        </Badge>
-      )}
+      {(mode === 'offline' || mode === 'unsupported') && <span className="truncate px-1 font-medium text-bad">{mode === 'offline' ? 'No daemon' : 'Unsupported'}</span>}
       {main ? (
         <RealZecChip />
       ) : (
@@ -145,20 +141,15 @@ export function NavDrawer({ open, onClose, onWallet }: { open: boolean; onClose:
           {/* Network, height, spend cap and proxy at a glance */}
           <div className="space-y-2 rounded-lg border border-line bg-sunken p-3 text-xs">
             <div className="flex flex-wrap items-center gap-2">
-              {mode === 'mock' && (
-                <Badge tone="mock" className="font-mono tracking-wide">
-                  MOCK
-                </Badge>
-              )}
               {main && <RealZecChip />}
               {status ? (
                 <span className="flex items-center gap-1.5">
                   <Radio className="size-3.5 text-faint" aria-hidden />
-                  <span className={clsx('font-medium', main ? 'text-real' : 'text-fg')}>{networkLabel(status.network)}</span>
+                  <span className={clsx('font-medium', main ? 'text-real' : 'text-fg')}>{networkLabel(status.network, { short: true })}</span>
                   <span className="font-mono tabular-nums text-faint">#{formatHeight(status.height ?? null)}</span>
                 </span>
               ) : (
-                <span className="text-muted">{mode === 'probing' ? 'Connecting to local daemons…' : 'No daemon status yet'}</span>
+                <span className="text-muted">{mode === 'probing' ? 'Connecting to your daemons…' : mode === 'offline' ? 'No daemon connected' : 'No daemon status yet'}</span>
               )}
             </div>
             {cap && (
@@ -213,7 +204,7 @@ export function NavDrawer({ open, onClose, onWallet }: { open: boolean; onClose:
           <div>
             <div className="section-label mb-1 px-1 text-[10px] text-muted">Connections</div>
             <div className="rounded-lg border border-line bg-raised p-1 text-xs">
-              {mode === 'probing' ? <div className="p-2.5 text-muted">Connecting to local daemons…</div> : <ConnectionDetails now={now} />}
+              {mode === 'probing' ? <div className="p-2.5 text-muted">Connecting to your daemons…</div> : <ConnectionDetails now={now} />}
             </div>
           </div>
 

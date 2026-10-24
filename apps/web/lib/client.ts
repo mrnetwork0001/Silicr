@@ -30,6 +30,8 @@ const CODE_PREFIX: Record<string, string> = {
   unsupported: 'Not supported by this daemon',
   internal: 'Daemon error',
   busy: 'Busy',
+  demo_disabled: 'Disabled in the public demo',
+  rate_limited: 'Too many requests from your address (public demo limit); try again later',
 };
 
 export function errorMessage(e: unknown): string {

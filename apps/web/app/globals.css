@@ -3,8 +3,8 @@
 /*
  * Silicr "Eclipse" design tokens, shared with the landing page. Dark only.
  * Black ground, warm near-black frosted panels, one orange accent (primary action, active nav).
- * ZEC amounts are peach. The Leak Inspector "knows" is an orange glow; MOCK DATA is violet
- * stripes so a replay never looks real; REAL ZEC (mainnet) is solid red, the loudest thing on screen.
+ * ZEC amounts are peach. The Leak Inspector "knows" is an orange glow; REAL ZEC (mainnet) is
+ * solid red, the loudest thing on screen.
  */
 
 @theme inline {
@@ -41,8 +41,6 @@
   --color-knows: var(--knows);
   --color-knows-fg: var(--knows-fg);
   --color-knows-soft: var(--knows-soft);
-  --color-mock: var(--mock);
-  --color-mock-soft: var(--mock-soft);
   --color-real: var(--real);
   --color-real-soft: var(--real-soft);
 }
@@ -90,8 +88,6 @@
   --knows: #ee7f20;
   --knows-fg: #ffffff;
   --knows-soft: rgba(238, 127, 32, 0.14);
-  --mock: #8b7cf6;
-  --mock-soft: rgba(139, 124, 246, 0.16);
   --real: #e5484d;
   --real-soft: rgba(229, 72, 77, 0.16);
   --hatch: rgba(255, 255, 255, 0.07);
@@ -160,11 +156,6 @@
   /* Ciphertext / withheld values: dimmed and hatched. */
   .hatch {
     background-image: repeating-linear-gradient(135deg, var(--hatch) 0 1px, transparent 1px 6px);
-  }
-
-  .mock-stripes {
-    background-color: #000;
-    background-image: repeating-linear-gradient(135deg, rgba(139, 124, 246, 0.2) 0 10px, transparent 10px 20px);
   }
 
   /* Eclipse signatures */
@@ -712,17 +703,5 @@
   .break-all,
   .font-mono {
     overflow-wrap: anywhere;
-  }
-}
-
-@media (max-width: 600px) {
-  .mock-reason {
-    display: none;
-  }
-}
-
-@media (max-width: 900px) {
-  .mock-stripes button.btn-outline {
-    min-height: 30px;
   }
 }

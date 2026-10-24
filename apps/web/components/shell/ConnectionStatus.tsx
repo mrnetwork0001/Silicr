@@ -29,7 +29,7 @@ export function useChainInfo(): { status: StatusDto | null; mismatch: boolean } 
   return { status: b ?? p, mismatch: !!(b && p && b.network !== p.network) };
 }
 
-/** Real mainnet funds. Solid red and never striped, so it can't be confused with the orange MOCK DATA marks. */
+/** Real mainnet funds. Solid red, so it stands apart from every other chip. */
 export function RealZecChip({ className }: { className?: string }) {
   return (
     <Badge
@@ -75,12 +75,21 @@ export function ConnectionStatus() {
     return (
       <div className="flex items-center gap-2 text-xs text-muted">
         <Spinner className="size-3.5" />
-        <span className="hidden sm:inline">Connecting to local daemons…</span>
+        <span className="hidden sm:inline">Connecting to your daemons…</span>
+      </div>
+    );
+  }
+  if (mode === 'offline' || mode === 'unsupported') {
+    return (
+      <div className="flex items-center gap-2 text-xs text-muted">
+        <Dot tone="bad" />
+        <span className="hidden sm:inline">{mode === 'offline' ? 'No daemon connected' : 'Unsupported network'}</span>
       </div>
     );
   }
 
-  const network = status ? networkLabel(status.network) : null;
+  // The REAL ZEC chip sits next to the label, so the short form here.
+  const network = status ? networkLabel(status.network, { short: true }) : null;
   const main = status?.network === 'main';
   const cap = status?.spendCap ?? null;
   const proxy = status?.proxy ?? null;
@@ -95,20 +104,14 @@ export function ConnectionStatus() {
         aria-haspopup="dialog"
         className="flex h-8 items-center gap-2 rounded-md border border-line px-2 text-xs text-muted transition-colors hover:bg-hover hover:text-fg sm:gap-2.5 sm:px-2.5"
       >
-        {mode === 'mock' ? (
-          <Badge tone="mock" className="font-mono tracking-wide">
-            MOCK
-          </Badge>
-        ) : (
-          <span className="flex items-center gap-2.5">
-            {(['buyer', 'provider', 'relay'] as const).map((r) => (
-              <span key={r} className="flex items-center gap-1.5" title={`${ROLE_LABEL[r]} ${conn[r].status}`}>
-                <Dot tone={connTone(conn[r])} pulse={conn[r].status === 'online' && conn[r].sse === 'open'} />
-                <span className="hidden lg:inline">{ROLE_LABEL[r]}</span>
-              </span>
-            ))}
-          </span>
-        )}
+        <span className="flex items-center gap-2.5">
+          {(['buyer', 'provider', 'relay'] as const).map((r) => (
+            <span key={r} className="flex items-center gap-1.5" title={`${ROLE_LABEL[r]} ${conn[r].status}`}>
+              <Dot tone={connTone(conn[r])} pulse={conn[r].status === 'online' && conn[r].sse === 'open'} />
+              <span className="hidden lg:inline">{ROLE_LABEL[r]}</span>
+            </span>
+          ))}
+        </span>
         {main && <RealZecChip />}
         {network && (
           <span className="hidden items-center gap-1.5 border-line sm:flex md:border-l md:pl-2.5">
@@ -166,12 +169,6 @@ export function ConnectionDetails({ now }: { now: number }) {
   const main = status?.network === 'main';
   return (
     <>
-      {mode === 'mock' && (
-        <div className="mock-stripes m-1 rounded-md border border-mock/40 p-2.5 text-mock">
-          <div className="font-mono font-semibold tracking-wide">MOCK DATA</div>
-          <div className="mt-0.5 text-fg">Scripted replay inside this browser tab. Nothing below is a live connection.</div>
-        </div>
-      )}
       {(['buyer', 'provider', 'relay'] as const).map((r) => {
         const c = conn[r];
         const st = r === 'buyer' ? buyerStatus : r === 'provider' ? providerStatus : null;
@@ -179,15 +176,13 @@ export function ConnectionDetails({ now }: { now: number }) {
           <div key={r} className="rounded-md px-2.5 py-2 hover:bg-hover">
             <div className="flex items-center justify-between gap-2">
               <span className="flex items-center gap-2 font-medium text-fg">
-                <Dot tone={mode === 'mock' ? 'neutral' : connTone(c)} />
+                <Dot tone={connTone(c)} />
                 {ROLE_LABEL[r]} {r === 'relay' ? '' : 'daemon'}
               </span>
               <span className="font-mono text-faint">{hostOf(c.url)}</span>
             </div>
             <div className="mt-1 space-y-0.5 pl-3.5 text-muted">
-              {mode === 'mock' ? (
-                <div>{c.error ? `Unreachable at load: ${c.error}` : 'Not contacted (mock mode)'}</div>
-              ) : c.status === 'online' ? (
+              {c.status === 'online' ? (
                 <>
                   <div>
                     Online
@@ -198,12 +193,12 @@ export function ConnectionDetails({ now }: { now: number }) {
               ) : (
                 <div className="text-bad">{c.status === 'offline' ? `Offline: ${c.error ?? 'no answer'}` : 'Not checked yet'}</div>
               )}
-              {st && (mode === 'mock' || c.status === 'online') && (
+              {st && c.status === 'online' && (
                 <>
                   <div className="flex flex-wrap items-center gap-x-2">
                     <span className={st.network === 'main' ? 'font-medium text-real' : undefined}>{networkLabel(st.network)}</span>
                     <span>v{st.version}</span>
-                    <span>{st.demoMode ? 'demo mode' : 'not in demo mode'}</span>
+                    <span>{st.publicDemo ? 'public demo' : st.demoMode ? 'demo mode' : 'not in demo mode'}</span>
                     {st.alias && <span className="text-fg">{st.alias}</span>}
                   </div>
                   {st.address && (
@@ -222,7 +217,7 @@ export function ConnectionDetails({ now }: { now: number }) {
                   )}
                 </>
               )}
-              {r === 'relay' && (mode === 'mock' || c.status === 'online') && (
+              {r === 'relay' && c.status === 'online' && (
                 <div>Observer feed: {relayObserver === 'available' ? 'available (demo)' : relayObserver === 'unavailable' ? 'not exposed' : 'not checked yet'}</div>
               )}
             </div>

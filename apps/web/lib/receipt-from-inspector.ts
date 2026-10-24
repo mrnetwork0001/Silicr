@@ -109,11 +109,11 @@ export function receiptFromInspector(data: InspectorData, state: State, generate
 
   const r = data.rfq;
   const network = data.network;
-  const chainKind: ReceiptInput['chainKind'] = data.mock ? 'mock' : network === 'memory' ? 'memory' : network === 'test' || network === 'regtest' ? 'test' : network === 'main' ? 'main' : 'unknown';
+  const chainKind: ReceiptInput['chainKind'] = network === 'test' ? 'test' : network === 'main' ? 'main' : 'unknown';
   const request = r?.request ?? data.job?.request ?? null;
   return {
     rfqId: data.rfqId ?? 'unknown',
-    network: data.mock ? 'mock' : network,
+    network,
     chainKind,
     demoMode: data.demo,
     proxied: data.proxied,
@@ -131,7 +131,7 @@ export function receiptFromInspector(data: InspectorData, state: State, generate
     columns,
     transactions,
     viewsUnavailable,
-    producer: `Silicr web terminal (${data.mock ? 'mock replay' : 'Leak Inspector'})`,
+    producer: 'Silicr web terminal (Leak Inspector)',
   };
 }
 

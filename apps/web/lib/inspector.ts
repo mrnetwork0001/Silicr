@@ -57,7 +57,6 @@ export interface InspectorData {
   knows: Record<Party, number>;
   txids: string[];
   demo: boolean;
-  mock: boolean;
   /** The network the connected daemons report (buyer first). */
   network: NetworkName | null;
   /** This machine's daemon routes its outbound traffic through a SOCKS5 proxy, so its IP isn't what the relay and light-wallet server see. */
@@ -269,16 +268,15 @@ function newestFirst(list: InspObs[]): InspObs[] {
 }
 
 export function buildInspector(s: State, rfqId: string | null, now: number): InspectorData {
-  const mock = s.mode === 'mock';
   const rfq = (rfqId && s.rfqs[rfqId]) || null;
   const job = (rfqId && s.jobs[rfqId]) || null;
   const buyerAddress = s.buyerStatus?.address ?? null;
 
   // --- availability -----------------------------------------------------
-  const buyerOnline = mock || s.conn.buyer.status === 'online';
-  const providerOnline = mock || s.conn.provider.status === 'online';
+  const buyerOnline = s.conn.buyer.status === 'online';
+  const providerOnline = s.conn.provider.status === 'online';
   const statuses = [buyerOnline ? s.buyerStatus : null, providerOnline ? s.providerStatus : null].filter((x) => !!x);
-  const demo = mock || (statuses.length > 0 && statuses.every((x) => x!.demoMode));
+  const demo = (statuses.length > 0 && statuses.every((x) => x!.demoMode));
   const home: Party | null = buyerOnline ? 'buyer' : providerOnline ? 'provider' : null;
   const homeStatus = home === 'buyer' ? s.buyerStatus : home === 'provider' ? s.providerStatus : null;
   const network = statuses[0]?.network ?? null;
@@ -288,26 +286,26 @@ export function buildInspector(s: State, rfqId: string | null, now: number): Ins
     chain: {
       available: buyerOnline || providerOnline,
       reason: buyerOnline || providerOnline ? null : 'No daemon connected to read public transaction views from.',
-      source: mock ? 'mock replay' : `${hostOf(buyerOnline ? s.conn.buyer.url : s.conn.provider.url)}/api/chain/tx/:txid`,
+      source: `${hostOf(buyerOnline ? s.conn.buyer.url : s.conn.provider.url)}/api/chain/tx/:txid`,
     },
     relay: {
-      available: demo && (mock || s.relayObserver === 'available'),
+      available: demo && s.relayObserver === 'available',
       reason: !demo
         ? NOT_DEMO
         : s.relayObserver === 'unavailable'
           ? `The relay's observer feed isn't reachable${s.relayObserverError ? `: ${s.relayObserverError}` : ''}.`
           : 'Checking the relay observer feed…',
-      source: mock ? 'mock replay' : `${hostOf(s.conn.relay.url)}/_observer`,
+      source: `${hostOf(s.conn.relay.url)}/_observer`,
     },
     provider: {
       available: providerOnline && (demo || home === 'provider'),
       reason: !providerOnline ? `Provider daemon not connected (${hostOf(s.conn.provider.url)}).` : NOT_DEMO,
-      source: mock ? 'mock replay' : `${hostOf(s.conn.provider.url)}/api/leaks`,
+      source: `${hostOf(s.conn.provider.url)}/api/leaks`,
     },
     buyer: {
       available: buyerOnline && (demo || home === 'buyer'),
       reason: !buyerOnline ? `Buyer daemon not connected (${hostOf(s.conn.buyer.url)}).` : NOT_DEMO,
-      source: mock ? 'mock replay' : `${hostOf(s.conn.buyer.url)}/api/leaks`,
+      source: `${hostOf(s.conn.buyer.url)}/api/leaks`,
     },
   };
 
@@ -439,7 +437,7 @@ export function buildInspector(s: State, rfqId: string | null, now: number): Ins
   const knows = {} as Record<Party, number>;
   for (const p of PARTIES) knows[p] = FACTS.filter((f) => matrix[f.key][p].state === 'knows').length;
 
-  return { rfqId, rfq, job, window, columns, matrix, knows, txids: [...txids], demo, mock, network, proxied };
+  return { rfqId, rfq, job, window, columns, matrix, knows, txids: [...txids], demo, network, proxied };
 }
 
 export function describeTarget(d: InspectorData): string {

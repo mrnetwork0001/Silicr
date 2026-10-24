@@ -27,9 +27,9 @@ export function RequestView({ id }: { id: string }) {
   const logs = useSilicr((s) => s.logs[id]);
   const buyerStatus = useSilicr((s) => s.buyerStatus);
   const job = useSilicr((s) => s.jobs[id]);
-  const providerOnline = useSilicr((s) => s.mode === 'mock' || s.conn.provider.status === 'online');
+  const providerOnline = useSilicr((s) => s.conn.provider.status === 'online');
   const now = useNow(1000);
-  const demo = mode === 'mock' || !!buyerStatus?.demoMode;
+  const demo = !!buyerStatus?.demoMode;
 
   useEffect(() => {
     if (mode === 'probing') return;
@@ -44,7 +44,7 @@ export function RequestView({ id }: { id: string }) {
     return () => clearInterval(t);
   }, [id, mode]);
 
-  // Explorer links only for real chains the terminal knows an explorer for; never for the mock replay's random txids.
+  // Explorer links only for the chains the terminal knows an explorer for.
   const explorer = (txid: string) => (mode === 'real' ? explorerTxLink(txid, buyerStatus?.network) : null);
 
   if (!rfq) {
@@ -61,11 +61,9 @@ export function RequestView({ id }: { id: string }) {
         >
           {err === 'offline'
             ? `Requests live in your buyer daemon (${config.buyerUrl}). Start it to see this one.`
-            : mode === 'mock'
-              ? 'Mock requests live only in this browser tab; reloading the page starts a fresh replay.'
-              : err && err !== 'not_found'
-                ? err
-                : `The buyer daemon has no request ${id}.`}
+            : err && err !== 'not_found'
+              ? err
+              : `The buyer daemon has no request ${id}.`}
         </Empty>
       </Panel>
     );

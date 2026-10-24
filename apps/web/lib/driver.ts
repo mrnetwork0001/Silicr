@@ -1,11 +1,11 @@
 /**
- * Boot: probe the local daemons, then start either the real driver (HTTP + SSE)
- * or the scripted mock replay. Mock mode is used when NEXT_PUBLIC_SILICR_MOCK=1,
- * when the URL has ?mock=1, or when neither the buyer nor the provider daemon
- * answers at load. The UI always shows a MOCK DATA banner in mock mode.
+ * Boot: probe the daemons, then start the driver (HTTP + SSE). The terminal runs only against
+ * daemons on Zcash testnet or mainnet: when neither the buyer nor the provider answers, the shell
+ * shows how to start one (mode 'offline'); a daemon on any other network (e.g. the test suite's
+ * simulated `memory` chain) is refused (mode 'unsupported').
  */
 
-import type { BuyerFault, NewRfqRequest, ProviderFault, ProviderPolicyDto, RfqDto, StatusDto, WalletDto, WithdrawConfirmDto, WithdrawRequest, WithdrawResultDto } from '@silicr/api';
+import type { BuyerFault, NewRfqRequest, PresetRfqRequest, ProviderFault, ProviderPolicyDto, RfqDto, StatusDto, WalletDto, WithdrawConfirmDto, WithdrawRequest, WithdrawResultDto } from '@silicr/api';
 import { DaemonClient, errorMessage } from './client';
 import { config } from './config';
 import { actions } from './store';
@@ -17,10 +17,11 @@ export interface InspectorTarget {
 }
 
 export interface Driver {
-  readonly kind: 'mock' | 'real';
+  readonly kind: 'real';
   start(): void;
   stop(): void;
-  createRfq(req: NewRfqRequest): Promise<{ rfqId: string }>;
+  /** A PresetRfqRequest only on a public-demo daemon (StatusDto.publicDemo). */
+  createRfq(req: NewRfqRequest | PresetRfqRequest): Promise<{ rfqId: string }>;
   accept(rfqId: string, providerId: string): Promise<RfqDto>;
   stopRfq(rfqId: string): Promise<RfqDto>;
   downloadResult(rfqId: string): Promise<void>;
@@ -37,8 +38,6 @@ export interface Driver {
   getWallet(role: 'buyer' | 'provider'): Promise<WalletDto>;
   /** POST /api/wallet/withdraw. On mainnet the first call returns the confirm request (409) instead of sending. */
   withdraw(role: 'buyer' | 'provider', req: WithdrawRequest): Promise<WithdrawResultDto | WithdrawConfirmDto>;
-  /** Mock only: submit the default demo request with auto-accept. */
-  replayDemo?(): Promise<string>;
 }
 
 export type ProbeOutcome = { ok: true; status: StatusDto } | { ok: false; error: string };
@@ -64,7 +63,7 @@ export function boot(): Promise<void> {
   return bootPromise;
 }
 
-/** Re-probe the daemons (from the mock banner's Retry button). */
+/** Re-probe the daemons (the connect screen's Retry button). */
 export async function retryConnection(): Promise<void> {
   if (bootPromise) await bootPromise.catch(() => undefined);
   current?.stop();
@@ -73,14 +72,20 @@ export async function retryConnection(): Promise<void> {
   return bootPromise;
 }
 
-function urlWantsMock(): boolean {
-  if (typeof window === 'undefined') return false;
-  try {
-    const v = new URLSearchParams(window.location.search).get('mock');
-    return v === '1' || v === 'true';
-  } catch {
-    return false;
-  }
+export const UNSUPPORTED_NETWORK = 'unsupported network: run the daemon with --network test or main';
+
+/** The networks the terminal runs against. */
+export function isSupportedNetwork(n: unknown): n is 'test' | 'main' {
+  return n === 'test' || n === 'main';
+}
+
+/** null when the probe can start the terminal, else why not (offline or unsupported). */
+export function probeVerdict(probe: ProbeResult): { mode: 'offline' | 'unsupported'; error: string } | null {
+  const up = [probe.buyer, probe.provider].filter((p): p is { ok: true; status: StatusDto } => p.ok);
+  if (up.length === 0) return { mode: 'offline', error: probe.buyer.ok ? '' : probe.buyer.error };
+  const bad = up.find((p) => !isSupportedNetwork(p.status.network));
+  if (bad) return { mode: 'unsupported', error: `${UNSUPPORTED_NETWORK} (the ${bad.status.role} daemon reports "${String(bad.status.network)}")` };
+  return null;
 }
 
 async function probeStatus(url: string): Promise<ProbeOutcome> {
@@ -113,36 +118,26 @@ export async function probeAll(): Promise<ProbeResult> {
   return { buyer, provider, relay };
 }
 
-async function chooseAndStart(isRetry: boolean): Promise<void> {
+async function chooseAndStart(_isRetry: boolean): Promise<void> {
   actions.reset(URLS);
-  if (config.forceMock || (!isRetry && urlWantsMock())) {
-    await startMock('forced', null);
-    return;
-  }
   actions.setMode('probing');
   const probe = await probeAll();
-  if (!probe.buyer.ok && !probe.provider.ok) {
-    await startMock('unreachable', probe);
+  const verdict = probeVerdict(probe);
+  if (verdict) {
+    // Show what each daemon said on the connect screen; nothing else from the probe is used.
+    for (const role of ['buyer', 'provider'] as const) {
+      const p = probe[role];
+      actions.setConn(role, p.ok ? { status: 'online', error: null } : { status: 'offline', error: p.error });
+      if (p.ok) actions.setStatus(role, p.status);
+    }
+    actions.setConn('relay', { status: probe.relay.ok ? 'online' : 'offline', error: probe.relay.error });
+    actions.setMode(verdict.mode, verdict.error || null);
     return;
   }
   const { RealDriver } = await import('./real');
   const d = new RealDriver(probe);
   current = d;
   actions.setMode('real');
-  d.start();
-}
-
-async function startMock(reason: 'forced' | 'unreachable', probe: ProbeResult | null): Promise<void> {
-  if (probe) {
-    // Remember why we fell back, for the banner. Nothing else from the probe is used.
-    actions.setConn('buyer', { status: 'offline', error: probe.buyer.ok ? null : probe.buyer.error });
-    actions.setConn('provider', { status: 'offline', error: probe.provider.ok ? null : probe.provider.error });
-    actions.setConn('relay', { status: probe.relay.ok ? 'online' : 'offline', error: probe.relay.error });
-  }
-  const { MockDriver } = await import('./mock/driver');
-  const d = new MockDriver();
-  current = d;
-  actions.setMode('mock', reason);
   d.start();
 }
 

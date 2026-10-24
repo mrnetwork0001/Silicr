@@ -6,7 +6,7 @@ import { hostOf } from '@/lib/config';
 import { formatHeight, gpuLabel, networkLabel, toZats, zecString } from '@/lib/format';
 import { useNow } from '@/lib/hooks';
 import { gpuSummary } from '@/lib/market';
-import { useSilicr } from '@/lib/store';
+import { isPublicDemo, useSilicr } from '@/lib/store';
 import { VerifiedBadge } from '../badges';
 import { RealZecChip } from '../shell/ConnectionStatus';
 import { Badge, Empty, ErrorNote, Mono, Panel, Skeleton, Stat, Zec } from '../ui';
@@ -25,6 +25,7 @@ export function ProviderView() {
   const jobLogs = useSilicr((s) => s.jobLogs);
   const rfqs = useSilicr((s) => s.rfqs);
   const providers = useSilicr((s) => s.providers);
+  const publicDemo = useSilicr(isPublicDemo);
   const now = useNow(1000);
 
   const jobs = useMemo(() => Object.values(jobMap).sort((a, b) => jobSortKey(b) - jobSortKey(a)), [jobMap]);
@@ -36,8 +37,8 @@ export function ProviderView() {
   }, [selected, live, jobs]);
   const current = (selected && jobMap[selected]) || live || jobs[0] || null;
 
-  const online = mode === 'mock' || conn.status === 'online';
-  const demo = mode === 'mock' || !!status?.demoMode;
+  const online = conn.status === 'online';
+  const demo = !!status?.demoMode;
   const entry = providers?.find((p) => p.providerId === status?.providerId);
   const earned = earnedTotal(jobs);
   const done = jobs.filter((j) => j.state === 'done').length;
@@ -119,12 +120,15 @@ export function ProviderView() {
           {!jobsLoaded && mode === 'real' ? (
             <Skeleton className="h-64 w-full" />
           ) : (
-            <CurrentJob job={current} logs={current ? jobLogs[current.rfqId] : undefined} policy={policy} now={now} demo={demo} buyerHasIt={!!current && !!rfqs[current.rfqId]} />
+            <CurrentJob job={current} logs={current ? jobLogs[current.rfqId] : undefined} policy={policy} now={now} demo={demo} publicDemo={publicDemo} buyerHasIt={!!current && !!rfqs[current.rfqId]} />
           )}
           <JobsTable jobs={jobs} selected={current?.rfqId ?? null} onSelect={setSelected} now={now} />
         </div>
         <div className="min-w-0 space-y-5">
-          <PolicyEditor policy={policy} disabled={online ? null : `Provider daemon offline (${hostOf(conn.url)})`} />
+          <PolicyEditor
+            policy={policy}
+            disabled={!online ? `Provider daemon offline (${hostOf(conn.url)})` : publicDemo ? 'Public testnet demo: the provider policy is fixed.' : null}
+          />
           <Panel title="Your directory entry" subtitle="What everyone can see. It holds nothing about buyers.">
             {entry ? (
               <dl className="space-y-2 p-4 text-xs">

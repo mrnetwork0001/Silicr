@@ -60,7 +60,7 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button
 // ---------------------------------------------------------------------------
 // Badges and dots
 
-export type Tone = 'neutral' | 'accent' | 'ok' | 'warn' | 'bad' | 'zec' | 'mock' | 'real';
+export type Tone = 'neutral' | 'accent' | 'ok' | 'warn' | 'bad' | 'zec' | 'real';
 
 const toneClass: Record<Tone, string> = {
   neutral: 'border-line-strong bg-white/[0.03] text-secondary',
@@ -69,8 +69,7 @@ const toneClass: Record<Tone, string> = {
   warn: 'border-warn/30 bg-warn-soft text-warn',
   bad: 'border-bad/30 bg-bad-soft text-bad',
   zec: 'border-zec/30 bg-zec-soft text-zec',
-  mock: 'mock-stripes border-mock/70 text-[#c9c1ff]',
-  /** Real mainnet funds: solid, never striped like the mock replay. */
+  /** Real mainnet funds: solid red, the loudest chip. */
   real: 'border-real bg-real font-bold text-white shadow-[0_0_14px_rgba(229,72,77,0.55)]',
 };
 
@@ -109,7 +108,6 @@ const dotTone: Record<Tone, string> = {
   warn: 'text-warn',
   bad: 'text-bad',
   zec: 'text-zec',
-  mock: 'text-mock',
   real: 'text-real',
 };
 

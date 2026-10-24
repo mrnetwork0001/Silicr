@@ -258,16 +258,18 @@ export const CLOSE_REASON_LABEL: Record<CloseReason, string> = {
   error: 'Error',
 };
 
-export function networkLabel(n: NetworkName): string {
+/**
+ * The terminal runs on Zcash testnet or mainnet only. `short` drops the REAL ZEC suffix where a
+ * REAL ZEC chip sits right next to the label.
+ */
+export function networkLabel(n: NetworkName, opts: { short?: boolean } = {}): string {
   switch (n) {
-    case 'memory':
-      return 'Simulated chain';
     case 'test':
       return 'Zcash testnet';
-    case 'regtest':
-      return 'Zcash regtest';
     case 'main':
-      return 'Zcash mainnet';
+      return opts.short ? 'Zcash mainnet' : 'Zcash mainnet · REAL ZEC';
+    default:
+      return `unsupported network (${String(n)})`;
   }
 }
 

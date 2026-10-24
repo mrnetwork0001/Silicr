@@ -9,7 +9,7 @@ import { explorerTxLink } from '@/lib/config';
 import { getDriver } from '@/lib/driver';
 import { formatHeight, networkLabel, parseZec, toZats, zecString } from '@/lib/format';
 import { useNow } from '@/lib/hooks';
-import { useSilicr } from '@/lib/store';
+import { isPublicDemo, useSilicr } from '@/lib/store';
 import { RealZecChip } from '../shell/ConnectionStatus';
 import { Badge, Button, CopyButton, ErrorNote, Field, Input, Mono, Panel, Skeleton, Switch, Zec } from '../ui';
 import { Qr } from './Qr';
@@ -20,12 +20,8 @@ type Role = 'buyer' | 'provider';
 const POLL_MS = 5000;
 
 function useRoles(): Role[] {
-  const mode = useSilicr((s) => s.mode);
   const conn = useSilicr((s) => s.conn);
-  return useMemo(() => {
-    if (mode === 'mock') return ['buyer', 'provider'];
-    return (['buyer', 'provider'] as const).filter((r) => conn[r].status === 'online');
-  }, [mode, conn]);
+  return useMemo(() => (['buyer', 'provider'] as const).filter((r) => conn[r].status === 'online'), [conn]);
 }
 
 function useWallet(role: Role | null): { wallet: WalletDto | null; error: string | null; refresh: () => void } {
@@ -70,6 +66,8 @@ export function WalletPanel({ compact }: { compact?: boolean }) {
   const [picked, setPicked] = useState<Role | null>(null);
   const role = picked && roles.includes(picked) ? picked : (roles[0] ?? null);
   const { wallet, error, refresh } = useWallet(role);
+  const publicDemo = useSilicr(isPublicDemo);
+  const blockTimeS = useSilicr((s) => (role === 'provider' ? s.providerStatus : s.buyerStatus)?.blockTimeS ?? null);
 
   if (mode === 'probing') {
     return <Skeleton className="h-64 w-full rounded-xl" />;
@@ -77,8 +75,8 @@ export function WalletPanel({ compact }: { compact?: boolean }) {
   if (!role) {
     return (
       <ErrorNote title="No daemon connected">
-        Start one with <code className="font-mono">silicr daemon</code> (buyer on 7701, provider on 7702), or the demo with{' '}
-        <code className="font-mono">pnpm silicr demo</code>.
+        Start one with <code className="font-mono">pnpm silicr daemon --network test --role buyer</code> (buyer on 7701, provider on 7702), or a whole
+        testnet stack with <code className="font-mono">pnpm silicr demo</code>.
       </ErrorNote>
     );
   }
@@ -89,7 +87,8 @@ export function WalletPanel({ compact }: { compact?: boolean }) {
         <Wallet className="size-5 text-accent" aria-hidden />
         <h1 className="text-base font-[650] tracking-[-0.01em] text-fg">Wallet</h1>
         {wallet?.network === 'main' && <RealZecChip />}
-        {wallet && wallet.network !== 'main' && <Badge tone={mode === 'mock' ? 'mock' : 'neutral'}>{mode === 'mock' ? 'MOCK DATA' : networkLabel(wallet.network)}</Badge>}
+        {wallet && wallet.network !== 'main' && <Badge tone="neutral">{networkLabel(wallet.network)}</Badge>}
+        {publicDemo && <Badge tone="accent">public demo · shared wallet</Badge>}
         {roles.length > 1 && (
           <div className="ml-auto flex gap-0.5" role="tablist" aria-label="Which wallet">
             {roles.map((r) => (
@@ -116,10 +115,19 @@ export function WalletPanel({ compact }: { compact?: boolean }) {
       {!wallet && !error && <Skeleton className="h-64 w-full rounded-xl" />}
       {wallet && (
         <div className={clsx('grid min-w-0 gap-4', !compact && 'lg:grid-cols-[minmax(0,1.1fr)_minmax(0,1fr)]')}>
-          <DepositCard wallet={wallet} />
+          <DepositCard wallet={wallet} blockTimeS={blockTimeS} />
           <div className="flex min-w-0 flex-col gap-4">
             <BalanceCard wallet={wallet} />
-            <WithdrawCard key={`${role}-${wallet.network}`} wallet={wallet} role={role} onSent={refresh} />
+            {publicDemo ? (
+              <Panel title="Withdraw" subtitle="Off in the public demo" actions={<Lock className="size-4 text-faint" aria-hidden />} bodyClassName="p-4">
+                <p className="text-xs leading-relaxed text-muted" id="withdraw-disabled">
+                  Public testnet demo: this is a shared wallet holding testnet coins only, so withdrawals are disabled. Run your own daemon (
+                  <code className="font-mono">pnpm silicr demo</code>) to try withdrawing.
+                </p>
+              </Panel>
+            ) : (
+              <WithdrawCard key={`${role}-${wallet.network}`} wallet={wallet} role={role} onSent={refresh} />
+            )}
           </div>
         </div>
       )}
@@ -127,7 +135,7 @@ export function WalletPanel({ compact }: { compact?: boolean }) {
   );
 }
 
-function DepositCard({ wallet }: { wallet: WalletDto }) {
+function DepositCard({ wallet, blockTimeS }: { wallet: WalletDto; blockTimeS: number | null }) {
   const [amount, setAmount] = useState('');
   const amountZats = amount.trim() ? parseZec(amount) : null;
   const amountBad = amount.trim() !== '' && (amountZats === null || amountZats <= 0n);
@@ -150,7 +158,7 @@ function DepositCard({ wallet }: { wallet: WalletDto }) {
             <strong className="font-semibold text-fg">
               {n} confirmation{n === 1 ? '' : 's'}
             </strong>
-            {wallet.network === 'main' || wallet.network === 'test' ? ` (about ${Math.round((n * 75) / 60)} min)` : ''}.
+            {(wallet.network === 'main' || wallet.network === 'test') && blockTimeS ? ` (about ${Math.max(1, Math.round((n * blockTimeS) / 60))} min)` : ''}.
           </p>
           {wallet.network === 'main' && (
             <p className="flex gap-1.5 text-xs text-bad">

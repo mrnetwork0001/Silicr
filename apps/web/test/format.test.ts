@@ -98,11 +98,12 @@ describe('helpers', () => {
 });
 
 describe('networks', () => {
-  it('labels every network the daemon can report', () => {
-    expect(networkLabel('main')).toBe('Zcash mainnet');
+  it('labels testnet and mainnet, and nothing else as a usable network', () => {
+    expect(networkLabel('main')).toBe('Zcash mainnet · REAL ZEC');
+    expect(networkLabel('main', { short: true })).toBe('Zcash mainnet');
     expect(networkLabel('test')).toBe('Zcash testnet');
-    expect(networkLabel('regtest')).toBe('Zcash regtest');
-    expect(networkLabel('memory')).toBe('Simulated chain');
+    expect(networkLabel('regtest')).toBe('unsupported network (regtest)');
+    expect(networkLabel('memory')).toBe('unsupported network (memory)');
   });
 
   it('knows which networks spend coins on a public chain', () => {

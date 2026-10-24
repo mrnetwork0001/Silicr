@@ -13,7 +13,8 @@ import { Kbd } from '../ui';
 import { ConnectionStatus } from './ConnectionStatus';
 import { LogoMark } from './Logo';
 import { config } from '@/lib/config';
-import { MockBanner } from './MockBanner';
+import { ConnectDaemon } from './ConnectDaemon';
+import { PublicDemoBanner } from './PublicDemoBanner';
 import { Backdrop } from './Backdrop';
 import { WalletDrawer } from '../wallet/WalletDrawer';
 import { BurgerButton, isNavActive, MobileTabs, NAV, NavDrawer, NetworkChip } from './MobileNav';
@@ -81,13 +82,13 @@ export function AppShell({ children }: { children: ReactNode }) {
     return () => window.removeEventListener('keydown', onKey);
   }, []);
 
-  // Expose the sticky chrome height so the inspector overlay sits below it (the mock banner stays visible).
+  // Expose the sticky chrome height so the inspector overlay sits below it (the public demo banner stays visible).
   useIsoLayoutEffect(() => {
     const el = chromeRef.current;
     if (!el) return;
     const set = () => {
       document.documentElement.style.setProperty('--chrome-h', `${el.offsetHeight}px`);
-      // ≤ 900px the inspector is a full-screen sheet that starts below the MOCK banner only.
+      // ≤ 900px the inspector is a full-screen sheet that starts below the public demo banner only.
       document.documentElement.style.setProperty('--banner-h', `${bannerRef.current?.offsetHeight ?? 0}px`);
     };
     set();
@@ -117,13 +118,17 @@ export function AppShell({ children }: { children: ReactNode }) {
     <>
       <Backdrop />
       <div ref={chromeRef} className="sticky top-0 z-40">
-        <div ref={bannerRef}>{mode === 'mock' && <MockBanner />}</div>
+        <div ref={bannerRef}>
+          <PublicDemoBanner />
+        </div>
         <Header walletOpen={walletOpen} setWalletOpen={setWalletOpen} navOpen={navOpen} setNavOpen={setNavOpen} />
         <MobileTabs pathname={pathname} />
       </div>
       <NavDrawer open={navOpen} onClose={closeNav} onWallet={openWallet} />
       <WalletDrawer open={walletOpen && !pathname.startsWith('/wallet')} onClose={closeWallet} />
-      <main ref={mainRef} className={clsx('app-main corona relative z-[1] mx-auto w-full max-w-[1600px] px-4 pb-16 pt-5 sm:px-6', inspectorOpen && 'max-[900px]:hidden')}>{children}</main>
+      <main ref={mainRef} className={clsx('app-main corona relative z-[1] mx-auto w-full max-w-[1600px] px-4 pb-16 pt-5 sm:px-6', inspectorOpen && 'max-[900px]:hidden')}>
+        {mode === 'offline' || mode === 'unsupported' ? <ConnectDaemon /> : children}
+      </main>
       <LeakInspector />
     </>
   );

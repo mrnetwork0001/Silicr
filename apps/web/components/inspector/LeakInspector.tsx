@@ -117,7 +117,7 @@ function InspectorPanel() {
   const mode = state.mode;
   useEffect(() => {
     const d = getDriver();
-    if (!d || d.kind === 'mock' || mode !== 'real') return;
+    if (!d || mode !== 'real') return;
     let stopped = false;
     const run = () => {
       if (!stopped) void d.refreshInspector({ rfqId: target, txids: txidsRef.current });
@@ -172,11 +172,6 @@ function InspectorPanel() {
             </div>
             {data.network === 'main' && <RealZecChip className="min-[901px]:hidden" />}
           </div>
-          {data.mock && (
-            <Badge tone="mock" className="font-mono tracking-wide max-[900px]:hidden">
-              MOCK DATA
-            </Badge>
-          )}
           <div className="flex min-w-0 items-center gap-2 max-[900px]:order-3 max-[900px]:w-full">
             <label htmlFor="insp-target" className="text-xs text-muted max-[900px]:sr-only">
               Request
@@ -428,7 +423,7 @@ function PartyHeader({ party, data }: { party: Party; data: InspectorData }) {
   const meta = PARTY_META[party];
   const Icon = meta.icon;
   const col = data.columns[party];
-  const sub = party === 'provider' && data.mock ? 'amber-otter-17 (this machine)' : meta.sub;
+  const sub = meta.sub;
   return (
     <div role="columnheader" className="flex min-w-0 items-end justify-between gap-2 px-2 py-2.5">
       <div className="flex min-w-0 items-center gap-2">
