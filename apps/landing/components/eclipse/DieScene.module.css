@@ -1,0 +1,38 @@
+.scene {
+  display: block;
+  overflow: visible;
+}
+
+.board {
+  mask: linear-gradient(to bottom, transparent, #000 60%);
+  -webkit-mask: linear-gradient(to bottom, transparent, #000 60%);
+}
+
+.pulse {
+  stroke: #f7a35c;
+  stroke-width: 2.4;
+  stroke-dasharray: 70 930;
+  stroke-dashoffset: 1000;
+  filter: drop-shadow(0 0 6px rgba(238, 127, 32, 0.9));
+  animation: flow linear infinite;
+}
+@keyframes flow {
+  to { stroke-dashoffset: 0; }
+}
+
+.corona { animation: breathe 6s ease-in-out infinite; transform-origin: center; }
+.rim { animation: breatheRim 6s ease-in-out infinite; }
+.coreGlow { animation: breathe 4s ease-in-out infinite; }
+@keyframes breathe {
+  0%, 100% { opacity: 0.75; }
+  50% { opacity: 1; }
+}
+@keyframes breatheRim {
+  0%, 100% { opacity: 0.55; }
+  50% { opacity: 0.85; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pulse { animation: none; stroke-dashoffset: 1000; opacity: 0; }
+  .corona, .rim, .coreGlow { animation: none; }
+}
