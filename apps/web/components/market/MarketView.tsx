@@ -2,16 +2,17 @@
 
 import { useRouter } from 'next/navigation';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import type { NewRfqRequest, ProviderDto } from '@silicr/api';
+import type { NewRfqRequest, PresetRfqRequest, ProviderDto } from '@silicr/api';
 import { errorMessage } from '@/lib/client';
 import { hostOf } from '@/lib/config';
 import { getDriver } from '@/lib/driver';
-import { normalizeGpu, parseZec, splitArgv, toZats, zecString } from '@/lib/format';
+import { normalizeGpu, toZats, zecString } from '@/lib/format';
+import { derive, publicDemoForm, publicDemoRules } from '@/lib/request-form';
 import { checkSpendCap, estimateCost, gpuOptions, providerMatches, sortedRfqs } from '@/lib/market';
-import { useSilicr } from '@/lib/store';
+import { isPublicDemo, useSilicr } from '@/lib/store';
 import { Zec } from '../ui';
 import { MarketHeader } from './MarketHeader';
-import { NewRequestForm, type RequestFormDerived, type RequestFormState } from './NewRequestForm';
+import { NewRequestForm, type RequestFormState } from './NewRequestForm';
 import { ProviderTable, type ProviderRow } from './ProviderTable';
 import { RequestList } from './RequestList';
 
@@ -29,55 +30,8 @@ const DEFAULT_FORM: RequestFormState = {
   discloseMax: false,
   waitBlocks: '2',
   minBond: '',
+  preset: '',
 };
-
-function derive(f: RequestFormState): RequestFormDerived {
-  const errors: RequestFormDerived['errors'] = {};
-  const count = /^\d+$/.test(f.count) ? Number(f.count) : null;
-  if (count === null || count < 1 || count > 64) errors.count = '1 to 64';
-  const dur = Number(f.duration);
-  const durationS = Number.isFinite(dur) && dur > 0 ? Math.round(dur * (f.unit === 'h' ? 3600 : 60)) : null;
-  if (durationS === null) errors.duration = 'Enter a duration';
-  else if (durationS < 60) errors.duration = 'At least 1 minute';
-  else if (durationS > 30 * 86400) errors.duration = 'At most 30 days';
-  const maxPerHour = parseZec(f.maxZec);
-  if (maxPerHour === null || maxPerHour <= 0n) errors.maxZec = 'A positive amount, ≤ 8 decimals';
-  if (!f.path.trim()) errors.path = 'Required';
-  const argv = splitArgv(f.command.trim());
-  if (!argv.length) errors.command = 'Required';
-  let env: Record<string, string> | null = null;
-  if (f.env.trim()) {
-    env = {};
-    for (const pair of splitArgv(f.env.replace(/,/g, ' '))) {
-      const m = /^([A-Za-z_][A-Za-z0-9_]*)=(.*)$/.exec(pair);
-      if (!m) {
-        errors.env = `Not KEY=VALUE: ${pair}`;
-        break;
-      }
-      env[m[1]!] = m[2]!;
-    }
-  }
-  let waitBlocks: number | null = null;
-  let minBond: bigint | null = null;
-  if (f.autoAccept) {
-    waitBlocks = /^\d+$/.test(f.waitBlocks) ? Number(f.waitBlocks) : null;
-    if (waitBlocks === null || waitBlocks > 100) errors.waitBlocks = '0 to 100';
-    if (f.minBond.trim()) {
-      minBond = parseZec(f.minBond);
-      if (minBond === null) errors.minBond = 'Invalid amount';
-    }
-  }
-  return {
-    count,
-    durationS: errors.duration ? null : durationS,
-    maxPerHour: errors.maxZec ? null : maxPerHour,
-    minBond,
-    waitBlocks,
-    argv,
-    env,
-    errors,
-  };
-}
 
 export function MarketView() {
   const router = useRouter();
@@ -88,15 +42,26 @@ export function MarketView() {
   const rfqsLoaded = useSilicr((s) => s.rfqsLoaded);
   const buyerConn = useSilicr((s) => s.conn.buyer);
   const buyerStatus = useSilicr((s) => s.buyerStatus);
+  const publicDemo = useSilicr(isPublicDemo);
+  const presetsKey = JSON.stringify(buyerStatus?.presets ?? null) + JSON.stringify(buyerStatus?.publicDemoLimits ?? null);
+  // presetsKey stands in for the status fields the rules are made of.
+  const demoRules = useMemo(() => (publicDemo ? publicDemoRules(buyerStatus) : null), [publicDemo, presetsKey]);
 
   const [form, setForm] = useState<RequestFormState>(DEFAULT_FORM);
+  // Entering a public demo: adopt its first preset and limits once.
+  const demoApplied = useRef(false);
+  useEffect(() => {
+    if (!demoRules || demoApplied.current || !demoRules.presets.length) return;
+    demoApplied.current = true;
+    setForm((f) => publicDemoForm(f, demoRules));
+  }, [demoRules]);
   const [gpuTouched, setGpuTouched] = useState(false);
   const [selected, setSelected] = useState<Set<string>>(() => new Set());
   const [touched, setTouched] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
 
-  const derived = useMemo(() => derive(form), [form]);
+  const derived = useMemo(() => derive(form, demoRules), [form, demoRules]);
   const count = derived.count ?? 1;
 
   const rows: ProviderRow[] = useMemo(() => {
@@ -131,12 +96,12 @@ export function MarketView() {
 
   // An untouched form adopts what the directory actually offers if the default matches nobody.
   useEffect(() => {
-    if (gpuTouched || !providers?.length) return;
+    if (gpuTouched || demoRules || !providers?.length) return;
     if (providers.some((p) => p.verified && providerMatches(p, form.gpu, count))) return;
     const first = providers.find((p) => p.verified && p.gpus.length);
     const g = first?.gpus.find((x) => normalizeGpu(x.model) !== 'cpu') ?? first?.gpus[0];
     if (g) setForm((f) => ({ ...f, gpu: normalizeGpu(g.model), count: String(Math.max(1, Math.min(g.count, 4))) }));
-  }, [providers, gpuTouched, form.gpu, count]);
+  }, [providers, gpuTouched, demoRules, form.gpu, count]);
 
   const recipients: ProviderDto[] = useMemo(
     () => rows.filter((r) => r.matches && r.p.verified && selected.has(r.p.providerId)).map((r) => r.p),
@@ -172,23 +137,28 @@ export function MarketView() {
   const submit = async () => {
     const d = getDriver();
     if (!d || derived.count === null || derived.durationS === null || derived.maxPerHour === null) return;
-    const req: NewRfqRequest = {
+    const base = {
       gpu: form.gpu,
       count: derived.count,
       durationS: derived.durationS,
       maxPricePerHourZats: derived.maxPerHour.toString(),
       discloseMax: form.discloseMax,
       providerIds: recipients.map((p) => p.providerId),
-      job: {
-        path: form.path.trim(),
-        command: derived.argv,
-        ...(form.image.trim() ? { image: form.image.trim() } : {}),
-        ...(derived.env && Object.keys(derived.env).length ? { env: derived.env } : {}),
-      },
       autoAccept: form.autoAccept
-        ? { rule: 'cheapest', waitBlocks: derived.waitBlocks ?? 2, ...(derived.minBond && derived.minBond > 0n ? { minBondZats: derived.minBond.toString() } : {}) }
+        ? { rule: 'cheapest' as const, waitBlocks: derived.waitBlocks ?? 2, ...(derived.minBond && derived.minBond > 0n ? { minBondZats: derived.minBond.toString() } : {}) }
         : null,
     };
+    const req: NewRfqRequest | PresetRfqRequest = demoRules
+      ? { ...base, job: { preset: form.preset } }
+      : {
+          ...base,
+          job: {
+            path: form.path.trim(),
+            command: derived.argv,
+            ...(form.image.trim() ? { image: form.image.trim() } : {}),
+            ...(derived.env && Object.keys(derived.env).length ? { env: derived.env } : {}),
+          },
+        };
     setSubmitting(true);
     setSubmitError(null);
     try {
@@ -249,14 +219,18 @@ export function MarketView() {
               setSelected(new Set());
             }}
           />
-          <RequestList rfqs={rfqs} loading={!rfqsLoaded && mode !== 'mock'} offline={mode === 'real' && buyerConn.status !== 'online'} />
+          <RequestList rfqs={rfqs} loading={!rfqsLoaded} offline={mode === 'real' && buyerConn.status !== 'online'} />
         </div>
         <NewRequestForm
           form={form}
           set={(key, value) => {
             setSubmitError(null);
             if (key === 'gpu' || key === 'count') setGpuTouched(true);
-            setForm((f) => ({ ...f, [key]: value }));
+            setForm((f) => {
+              const next = { ...f, [key]: value };
+              // Picking another preset adopts its GPU and duration (within the demo's limits).
+              return key === 'preset' && demoRules ? publicDemoForm(next, demoRules) : next;
+            });
           }}
           derived={derivedWithRecipients}
           gpuChoices={gpuOptions(providers)}
@@ -267,6 +241,7 @@ export function MarketView() {
           onSubmit={submit}
           network={mode === 'probing' ? null : (buyerStatus?.network ?? null)}
           capCheck={capCheck}
+          publicDemo={demoRules}
         />
       </div>
     </div>

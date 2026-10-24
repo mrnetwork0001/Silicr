@@ -1,13 +1,14 @@
 'use client';
 
 import clsx from 'clsx';
-import { Coins, Lock, Send } from '@/components/icons';
+import { Coins, Info, Lock, Send } from '@/components/icons';
 import { useEffect, useState, type FormEvent, type ReactNode } from 'react';
 import type { NetworkName, ProviderDto } from '@silicr/api';
 import { formatDuration, gpuLabel, zecString } from '@/lib/format';
 import { estimateCost, type SpendCapCheck } from '@/lib/market';
 import { Button, ErrorNote, Field, Input, Panel, Select, Switch, Zec } from '../ui';
 import { SealedPreview } from './SealedPreview';
+import type { PublicDemoRules } from '@/lib/request-form';
 
 export interface RequestFormState {
   gpu: string;
@@ -24,6 +25,8 @@ export interface RequestFormState {
   discloseMax: boolean;
   waitBlocks: string;
   minBond: string;
+  /** Public demo only: the server-side example job (JobPresetDto.id). */
+  preset: string;
 }
 
 export interface RequestFormDerived {
@@ -52,6 +55,7 @@ export function NewRequestForm({
   onSubmit,
   network = null,
   capCheck = null,
+  publicDemo = null,
 }: {
   form: RequestFormState;
   set: <K extends keyof RequestFormState>(key: K, value: RequestFormState[K]) => void;
@@ -66,6 +70,8 @@ export function NewRequestForm({
   network?: NetworkName | null;
   /** The daemon's spend cap applied to this request, when it reports one. */
   capCheck?: SpendCapCheck | null;
+  /** A public testnet demo daemon: a preset picker replaces the folder, command, image and env fields. */
+  publicDemo?: PublicDemoRules | null;
 }) {
   const { errors } = derived;
   const n = recipients.length;
@@ -96,7 +102,7 @@ export function NewRequestForm({
   const stepOk = {
     compute: !errors.count && !!form.gpu,
     budget: !errors.duration && !errors.maxZec,
-    job: !errors.path && !errors.command && !errors.env,
+    job: !errors.path && !errors.command && !errors.env && !errors.preset,
     recipients: !errors.recipients && !errors.waitBlocks && !errors.minBond,
   };
 
@@ -145,6 +151,9 @@ export function NewRequestForm({
         </Step>
 
         <Step n={3} title="Job" done={stepOk.job}>
+          {publicDemo ? (
+            <PresetPicker rules={publicDemo} value={form.preset} onChange={(v) => set('preset', v)} error={errors.preset} />
+          ) : (
           <div className="space-y-3">
             <Field label="Job folder" htmlFor="rq-path" hint="On this machine. The daemon packs, encrypts and uploads it." error={errors.path}>
               <Input id="rq-path" value={form.path} invalid={!!errors.path} onChange={(e) => set('path', e.target.value)} className="font-mono text-xs" spellCheck={false} />
@@ -169,6 +178,7 @@ export function NewRequestForm({
               />
             </Field>
           </div>
+          )}
         </Step>
 
         <Step n={4} title="Recipients" done={stepOk.recipients}>
@@ -221,7 +231,7 @@ export function NewRequestForm({
               maxPerHour={derived.maxPerHour}
               discloseMax={form.discloseMax}
               recipients={n}
-              seed={`${form.gpu}|${form.count}|${form.duration}${form.unit}|${form.maxZec}|${form.discloseMax}|${form.path}|${form.command}|${form.image}|${form.env}|${n}`}
+              seed={`${form.gpu}|${form.count}|${form.duration}${form.unit}|${form.maxZec}|${form.discloseMax}|${publicDemo ? form.preset : `${form.path}|${form.command}|${form.image}|${form.env}`}|${n}`}
             />
             <dl className="space-y-1.5 border-t border-line pt-3.5 text-xs">
               <div className="flex items-baseline justify-between gap-3">
@@ -329,6 +339,53 @@ export function NewRequestForm({
         </Step>
       </form>
     </Panel>
+  );
+}
+
+/** Public demo: pick one of the daemon's own example jobs. Nothing from this browser runs on the provider. */
+function PresetPicker({ rules, value, onChange, error }: { rules: PublicDemoRules; value: string; onChange: (id: string) => void; error?: string | undefined }) {
+  const lim = rules.limits;
+  return (
+    <div className="space-y-2.5" id="rq-presets">
+      <div className="flex gap-2 rounded-md border border-accent-line bg-accent-soft p-2.5 text-2xs leading-relaxed text-fg">
+        <Info className="mt-px size-3.5 shrink-0 text-accent" aria-hidden />
+        <span>
+          <strong className="font-semibold">Public testnet demo: shared wallet, testnet coins only.</strong> Pick an example job; the daemon packs it
+          server-side.
+          {lim ? ` Up to ${Math.floor(lim.maxDurationS / 60)} min, ${lim.maxCount} GPU, ${lim.maxActive} request at a time, ${lim.perIpPerHour} per hour per address.` : ''}
+        </span>
+      </div>
+      {rules.presets.length === 0 ? (
+        <p className="text-2xs text-bad">This demo daemon offers no example jobs.</p>
+      ) : (
+        <div role="radiogroup" aria-label="Example job" className="space-y-1.5">
+          {rules.presets.map((p) => {
+            const on = p.id === value;
+            return (
+              <button
+                key={p.id}
+                type="button"
+                role="radio"
+                aria-checked={on}
+                onClick={() => onChange(p.id)}
+                className={clsx(
+                  'block w-full rounded-md border px-3 py-2 text-left transition-colors',
+                  on ? 'border-accent-line bg-accent-soft' : 'border-line bg-sunken/60 hover:bg-hover',
+                )}
+              >
+                <span className="flex items-center justify-between gap-2">
+                  <span className="text-xs font-semibold text-fg">{p.title}</span>
+                  <span className="font-mono text-2xs text-faint">{p.id}</span>
+                </span>
+                <span className="mt-0.5 block text-2xs text-muted">{p.description}</span>
+                <code className="mt-1 block font-mono text-2xs text-secondary">{p.command.join(' ')}</code>
+              </button>
+            );
+          })}
+        </div>
+      )}
+      {error && <p className="text-2xs text-bad">{error}</p>}
+    </div>
   );
 }
 

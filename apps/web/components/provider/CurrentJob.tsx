@@ -44,6 +44,7 @@ export function CurrentJob({
   policy,
   now,
   demo,
+  publicDemo = false,
   buyerHasIt,
 }: {
   job: ProviderJobDto | null;
@@ -51,6 +52,8 @@ export function CurrentJob({
   policy: ProviderPolicyDto | null;
   now: number;
   demo: boolean;
+  /** Public testnet demo: the provider's Stop job is disabled (the daemon answers 403 demo_disabled). */
+  publicDemo?: boolean;
   buyerHasIt: boolean;
 }) {
   if (!job) {
@@ -88,7 +91,7 @@ export function CurrentJob({
                 Buyer view <ArrowUpRight className="size-3" aria-hidden />
               </Link>
             )}
-            {live && <JobControls job={job} demo={demo} />}
+            {live && <JobControls job={job} demo={demo} publicDemo={publicDemo} />}
           </span>
         }
       >
@@ -186,7 +189,7 @@ function Watchdog({ wd, now, graceS }: { wd: Watchdog; now: number; graceS: numb
   );
 }
 
-function JobControls({ job, demo }: { job: ProviderJobDto; demo: boolean }) {
+function JobControls({ job, demo, publicDemo }: { job: ProviderJobDto; demo: boolean; publicDemo: boolean }) {
   const [busy, setBusy] = useState<string | null>(null);
   const [armed, setArmed] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -224,6 +227,7 @@ function JobControls({ job, demo }: { job: ProviderJobDto; demo: boolean }) {
             {hbStopped ? 'Resume heartbeats' : 'Stop heartbeats'}
           </Button>
         )}
+        {!publicDemo && (
         <Button
           size="sm"
           variant="danger"
@@ -241,6 +245,7 @@ function JobControls({ job, demo }: { job: ProviderJobDto; demo: boolean }) {
         >
           {armed ? 'Confirm stop' : 'Stop job'}
         </Button>
+        )}
       </span>
       {error && <span className="max-w-[300px] text-right text-2xs text-bad">{error}</span>}
     </span>
