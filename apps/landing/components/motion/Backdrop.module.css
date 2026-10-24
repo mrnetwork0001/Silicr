@@ -1,0 +1,117 @@
+/* Page backdrop: fixed under the content; every layer stays dim so text contrast is untouched. */
+
+.root {
+  --p: 0;
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  overflow: hidden;
+  contain: strict;
+}
+
+.layer {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+  height: calc(100% + 360px);
+  will-change: transform;
+}
+
+.dots {
+  background-image: radial-gradient(circle at 1px 1px, rgba(255, 190, 140, 0.075) 1px, transparent 0);
+  background-size: 24px 24px;
+  transform: translate3d(0, calc(var(--p) * -120px), 0);
+  mask-image: radial-gradient(ellipse 80% 70% at 50% 40%, #000 30%, rgba(0, 0, 0, 0.35) 100%);
+}
+
+.traces {
+  width: 100%;
+  transform: translate3d(0, calc(var(--p) * -320px), 0);
+  /* Strongest at the edges, faint behind the text column. */
+  mask-image: linear-gradient(90deg, #000 0%, rgba(0, 0, 0, 0.4) 30%, rgba(0, 0, 0, 0.28) 50%, rgba(0, 0, 0, 0.4) 70%, #000 100%);
+}
+
+.pulse {
+  stroke: #f7a35c;
+  stroke-width: 1.8;
+  stroke-dasharray: 46 954;
+  stroke-dashoffset: 1000;
+  opacity: 0.55;
+  filter: drop-shadow(0 0 4px rgba(238, 127, 32, 0.8));
+  animation: flow linear infinite;
+}
+@keyframes flow {
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
+.glows {
+  transform: translate3d(0, calc(var(--p) * -220px), 0);
+}
+.glow {
+  position: absolute;
+  border-radius: 50%;
+  background: radial-gradient(closest-side, rgba(238, 127, 32, 0.11), rgba(122, 52, 16, 0.045) 55%, transparent);
+  will-change: transform;
+}
+.g1 {
+  width: 900px;
+  height: 640px;
+  left: -260px;
+  top: 8%;
+  animation: drift1 38s ease-in-out infinite alternate;
+}
+.g2 {
+  width: 1000px;
+  height: 720px;
+  right: -320px;
+  top: 42%;
+  opacity: 0.9;
+  animation: drift2 46s ease-in-out infinite alternate;
+}
+.g3 {
+  width: 760px;
+  height: 520px;
+  left: 30%;
+  top: 78%;
+  opacity: 0.7;
+  animation: drift3 52s ease-in-out infinite alternate;
+}
+@keyframes drift1 {
+  to {
+    transform: translate3d(140px, 90px, 0) scale(1.08);
+  }
+}
+@keyframes drift2 {
+  to {
+    transform: translate3d(-160px, -70px, 0) scale(0.94);
+  }
+}
+@keyframes drift3 {
+  to {
+    transform: translate3d(-120px, -110px, 0) scale(1.1);
+  }
+}
+
+/* Keeps the top and bottom quiet so the header and footer read cleanly. */
+.vignette {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(180deg, rgba(0, 0, 0, 0.55), transparent 18%, transparent 82%, rgba(0, 0, 0, 0.6));
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pulse {
+    animation: none;
+    opacity: 0;
+  }
+  .glow {
+    animation: none;
+  }
+  .layer {
+    transform: none;
+  }
+}

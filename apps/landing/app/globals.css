@@ -1,0 +1,436 @@
+@import 'tailwindcss';
+
+/*
+ * Silicr landing page, Eclipse design system: matches the eclipse hero
+ * (components/eclipse) and the terminal. Dark only.
+ */
+
+@theme inline {
+  --font-sans: var(--font-inter), ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --font-display: var(--font-poppins), var(--font-inter), sans-serif;
+  --font-mono: var(--font-geist-mono), ui-monospace, 'SFMono-Regular', Menlo, Consolas, monospace;
+
+  --color-bg: var(--bg);
+  --color-panel: var(--panel);
+  --color-raised: var(--raised);
+  --color-sunken: var(--sunken);
+  --color-hover: var(--hover);
+  --color-line: var(--line);
+  --color-line-strong: var(--line-strong);
+  --color-fg: var(--fg);
+  --color-muted: var(--muted);
+  --color-faint: var(--faint);
+  --color-accent: var(--accent);
+  --color-accent-hover: var(--accent-hover);
+  --color-accent-fg: var(--accent-fg);
+  --color-accent-soft: var(--accent-soft);
+  --color-accent-line: var(--accent-line);
+  --color-body: var(--body);
+  --color-peach: var(--peach);
+  --color-ember: var(--ember);
+  --color-zec: var(--zec);
+  --color-zec-soft: var(--zec-soft);
+  --color-ok: var(--ok);
+  --color-ok-soft: var(--ok-soft);
+  --color-warn: var(--warn);
+  --color-warn-soft: var(--warn-soft);
+  --color-bad: var(--bad);
+  --color-bad-soft: var(--bad-soft);
+  --color-knows: var(--knows);
+  --color-knows-fg: var(--knows-fg);
+  --color-knows-soft: var(--knows-soft);
+  --color-mock: var(--mock);
+  --color-mock-soft: var(--mock-soft);
+}
+
+/* Eclipse: dark only. Pure black, warm hairlines, one orange accent (shared with the terminal). */
+:root {
+  color-scheme: dark;
+  --bg: #000000;
+  --panel: #0a0705;
+  --raised: #110b07;
+  --sunken: #060403;
+  --hover: rgba(255, 190, 140, 0.06);
+  --line: rgba(255, 190, 140, 0.1);
+  --line-strong: rgba(255, 190, 140, 0.18);
+  --fg: #ffffff;
+  --body: #bcbcbe;
+  --muted: #a3a3a8;
+  --faint: #6d6d72;
+  --accent: #ee7f20;
+  --accent-hover: #f28a2a;
+  --accent-fg: #000000;
+  --accent-soft: rgba(238, 127, 32, 0.09);
+  --accent-line: rgba(238, 127, 32, 0.42);
+  --peach: #f7c69b;
+  --ember: #7a3410;
+  --zec: #f7c69b;
+  --zec-soft: rgba(238, 127, 32, 0.07);
+  --ok: #f7c69b;
+  --ok-soft: rgba(247, 198, 155, 0.1);
+  --warn: #f5a25a;
+  --warn-soft: rgba(238, 127, 32, 0.08);
+  --bad: #ff7a59;
+  --bad-soft: rgba(255, 122, 89, 0.1);
+  --knows: #ee7f20;
+  --knows-fg: #000000;
+  --knows-soft: rgba(238, 127, 32, 0.14);
+  --mock: #f5a25a;
+  --mock-soft: rgba(238, 127, 32, 0.1);
+  --hatch: rgba(255, 190, 140, 0.075);
+  --shadow-pop: 0 1px 0 rgba(255, 255, 255, 0.04) inset, 0 24px 60px rgba(0, 0, 0, 0.6);
+}
+
+@layer base {
+  *,
+  ::before,
+  ::after {
+    border-color: var(--line);
+  }
+
+  html {
+    background: var(--bg);
+    color: var(--fg);
+    -webkit-text-size-adjust: 100%;
+    scroll-behavior: smooth;
+    /* Anchor targets land below the sticky header. */
+    scroll-padding-top: 5rem;
+  }
+
+  body {
+    min-height: 100dvh;
+    background: var(--bg);
+    color: var(--fg);
+    font-family: var(--font-sans);
+    font-size: 1rem;
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
+    font-feature-settings: 'cv11' on;
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--peach);
+    outline-offset: 2px;
+    border-radius: 4px;
+  }
+
+  ::selection {
+    background: rgba(238, 127, 32, 0.35);
+    color: var(--fg);
+  }
+
+  button {
+    font: inherit;
+    color: inherit;
+  }
+
+  code,
+  kbd,
+  pre,
+  samp {
+    font-family: var(--font-mono);
+    font-feature-settings: normal;
+  }
+}
+
+@layer components {
+  /* Ciphertext / withheld values: hatched, as in the terminal. */
+  .hatch {
+    background-image: repeating-linear-gradient(135deg, var(--hatch) 0 1px, transparent 1px 6px);
+  }
+
+  /* Faint dot grid behind the hero. */
+  .dot-grid {
+    background-image: radial-gradient(circle at 1px 1px, var(--line-strong) 1px, transparent 0);
+    background-size: 22px 22px;
+  }
+
+  /* Inline code in running text. */
+  .code-inline {
+    font-family: var(--font-mono);
+    font-size: 0.875em;
+    border: 1px solid var(--line-strong);
+    background: rgba(238, 127, 32, 0.06);
+    border-radius: 6px;
+    padding: 0.08em 0.38em;
+    white-space: nowrap;
+  }
+
+  .zec {
+    color: var(--zec);
+    font-family: var(--font-mono);
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* Long-form copy. */
+  .prose-body p + p {
+    margin-top: 1rem;
+  }
+
+  /* FAQ disclosure marker. */
+  .faq summary::-webkit-details-marker {
+    display: none;
+  }
+  .faq summary {
+    list-style: none;
+  }
+  .faq details[open] .faq-chevron {
+    transform: rotate(180deg);
+  }
+
+  .live-dot {
+    position: relative;
+  }
+  .live-dot::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border-radius: 9999px;
+    background: currentColor;
+    animation: silicr-ping 1.8s cubic-bezier(0, 0, 0.2, 1) infinite;
+  }
+
+  /* Hero: public ciphertext drifting upwards, faded at both edges. */
+  .cipher-window {
+    -webkit-mask-image: linear-gradient(to bottom, transparent, #000 22%, #000 78%, transparent);
+    mask-image: linear-gradient(to bottom, transparent, #000 22%, #000 78%, transparent);
+  }
+}
+
+
+@layer components {
+  /* Frosted glass: every raised surface gets a faint white wash over the warm near-black. */
+  .bg-panel,
+  .bg-raised {
+    background-image: linear-gradient(180deg, rgba(255, 255, 255, 0.045), rgba(255, 255, 255, 0.012));
+  }
+
+  /* Eyebrow: Poppins caps with a glowing orange dot. */
+  .eyebrow {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.6rem;
+    font-family: var(--font-display);
+    font-weight: 600;
+    font-size: 12.5px;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: var(--peach);
+  }
+  .eyebrow::before {
+    content: '';
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--accent);
+    box-shadow: 0 0 10px var(--accent), 0 0 3px var(--peach);
+  }
+
+  /* Soft corona behind a section heading. */
+  .corona {
+    position: absolute;
+    pointer-events: none;
+    width: 720px;
+    height: 420px;
+    left: -220px;
+    top: -140px;
+    background: radial-gradient(closest-side, rgba(238, 127, 32, 0.13), rgba(122, 52, 16, 0.05) 55%, transparent);
+    filter: blur(10px);
+  }
+
+  /* Warm-glass pill with an orange rim lit from the lower left (the hero badge). */
+  .pill-warm {
+    position: relative;
+    border: 1px solid transparent;
+    background:
+      linear-gradient(180deg, rgba(34, 18, 9, 0.85), rgba(16, 9, 5, 0.9)) padding-box,
+      linear-gradient(32deg, rgba(238, 127, 32, 0.95) 0%, rgba(238, 127, 32, 0.25) 42%, rgba(255, 255, 255, 0.1) 100%) border-box;
+    box-shadow: inset 0 0 14px rgba(238, 127, 32, 0.16), 0 0 24px rgba(238, 127, 32, 0.08);
+  }
+
+  .btn-primary {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    height: 3rem;
+    padding: 0 1.6rem;
+    border-radius: 999px;
+    color: #fff;
+    font-weight: 600;
+    background: linear-gradient(180deg, #f28a2a, #ec7a1c);
+    border: 1px solid rgba(255, 255, 255, 0.35);
+    transition: box-shadow 0.25s;
+  }
+  .btn-primary:hover {
+    box-shadow: 0 0 34px rgba(238, 127, 32, 0.6), 0 0 8px rgba(238, 127, 32, 0.8);
+  }
+  .btn-outline {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    height: 3rem;
+    padding: 0 1.6rem;
+    border-radius: 999px;
+    color: rgba(255, 255, 255, 0.9);
+    font-weight: 600;
+    border: 1px solid transparent;
+    background:
+      linear-gradient(#000, #000) padding-box,
+      linear-gradient(90deg, rgba(160, 160, 165, 0.7), rgba(180, 80, 20, 0.9)) border-box;
+    transition: filter 0.25s;
+  }
+  .btn-outline:hover {
+    filter: brightness(1.35);
+  }
+
+  /* "Knows" in the privacy matrices: orange with a glow. */
+  .bg-knows {
+    box-shadow: 0 0 14px rgba(238, 127, 32, 0.45);
+  }
+}
+
+@keyframes silicr-ping {
+  0% {
+    transform: scale(1);
+    opacity: 0.55;
+  }
+  80%,
+  100% {
+    transform: scale(2.6);
+    opacity: 0;
+  }
+}
+
+@keyframes cipher-scroll {
+  from {
+    transform: translateY(0);
+  }
+  to {
+    transform: translateY(-50%);
+  }
+}
+
+/* Three bids arrive one after another, stay, then the cycle starts over. */
+@keyframes bid-a {
+  0%,
+  8% {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  13%,
+  90% {
+    opacity: 1;
+    transform: none;
+  }
+  97%,
+  100% {
+    opacity: 0;
+  }
+}
+@keyframes bid-b {
+  0%,
+  22% {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  27%,
+  90% {
+    opacity: 1;
+    transform: none;
+  }
+  97%,
+  100% {
+    opacity: 0;
+  }
+}
+@keyframes bid-c {
+  0%,
+  36% {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  41%,
+  90% {
+    opacity: 1;
+    transform: none;
+  }
+  97%,
+  100% {
+    opacity: 0;
+  }
+}
+@keyframes bid-count {
+  0%,
+  8% {
+    opacity: 0;
+  }
+  13%,
+  90% {
+    opacity: 1;
+  }
+  97%,
+  100% {
+    opacity: 0;
+  }
+}
+
+/* Animations only run for people who haven't asked for reduced motion; everything is visible without them. */
+@media (prefers-reduced-motion: no-preference) {
+  .cipher-track {
+    animation: cipher-scroll 26s linear infinite;
+  }
+  .bid-a {
+    animation: bid-a 12s ease-out infinite;
+  }
+  .bid-b {
+    animation: bid-b 12s ease-out infinite;
+  }
+  .bid-c {
+    animation: bid-c 12s ease-out infinite;
+  }
+  .bid-count {
+    animation: bid-count 12s ease-out infinite;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+  *,
+  ::before,
+  ::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+  }
+}
+
+/* Alternate sections: a hairline divider that glows at its centre. */
+.section-alt::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 10%;
+  right: 10%;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(238, 127, 32, 0.45), transparent);
+  z-index: -1;
+}
+.section-alt::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 50%;
+  width: 900px;
+  max-width: 100%;
+  height: 260px;
+  transform: translateX(-50%);
+  pointer-events: none;
+  z-index: -1;
+  background: radial-gradient(ellipse at top, rgba(238, 127, 32, 0.07), transparent 70%);
+}

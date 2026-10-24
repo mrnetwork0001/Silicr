@@ -1,0 +1,222 @@
+/*
+ * Motion for the page body (below the hero). Content is visible by default: the hidden-until-revealed
+ * states apply only under `.rv`, which components/motion/Reveal.tsx adds after hydration and never under
+ * prefers-reduced-motion. Only opacity, transform, translate and filter animate.
+ */
+
+@property --spot {
+  syntax: '<color>';
+  inherits: false;
+  initial-value: rgba(238, 127, 32, 0);
+}
+
+:root {
+  interpolate-size: allow-keywords;
+}
+
+/* Content sits above the fixed backdrop. */
+#main ~ footer {
+  position: relative;
+}
+
+/* ---- reveal ---- */
+.rv .rv-group .rv-item {
+  opacity: 0;
+  transform: translate3d(0, 18px, 0);
+  filter: blur(6px);
+}
+.rv .rv-group .rv-item .rv-item {
+  transform: translate3d(0, 10px, 0);
+  filter: blur(3px);
+}
+.rv .rv-group .rv-head-item {
+  transform: translate3d(0, 26px, 0);
+  filter: blur(10px);
+}
+.rv .rv-group.rv-in .rv-item,
+.rv .rv-group.rv-in .rv-item .rv-item {
+  opacity: 1;
+  transform: none;
+  filter: none;
+}
+.rv .rv-item,
+.rv .lift {
+  transition:
+    opacity 0.8s cubic-bezier(0.2, 0.7, 0.2, 1) var(--rv-d, 0s),
+    transform 0.9s cubic-bezier(0.2, 0.7, 0.2, 1) var(--rv-d, 0s),
+    filter 0.8s cubic-bezier(0.2, 0.7, 0.2, 1) var(--rv-d, 0s),
+    translate 0.3s ease,
+    box-shadow 0.3s ease,
+    border-color 0.3s ease,
+    --spot 0.4s ease;
+}
+/* Table rows can't take filter cleanly in every engine; they just rise and fade. */
+.rv .rv-group tbody > tr.rv-item {
+  filter: none;
+}
+
+/* ---- panels: cursor spotlight, small ones lift ---- */
+.rv .spot {
+  --mx: 50%;
+  --my: -200px;
+  background-image:
+    radial-gradient(420px circle at var(--mx) var(--my), var(--spot), transparent 70%),
+    var(--spot-base, none);
+}
+.rv .spot:not(.rv-item) {
+  transition: --spot 0.4s ease, translate 0.3s ease, box-shadow 0.3s ease, border-color 0.3s ease;
+}
+.rv .spot.bg-panel,
+.rv .spot.bg-raised {
+  --spot-base: linear-gradient(180deg, rgba(255, 255, 255, 0.045), rgba(255, 255, 255, 0.012));
+}
+.rv .spot:hover {
+  --spot: rgba(238, 127, 32, 0.075);
+}
+.rv .lift:hover {
+  translate: 0 -3px;
+  border-color: var(--accent-line);
+  box-shadow: 0 0 0 1px rgba(238, 127, 32, 0.08), 0 14px 40px rgba(0, 0, 0, 0.55), 0 0 28px rgba(238, 127, 32, 0.12);
+}
+
+/* ---- section divider: a glowing hairline that sweeps in ---- */
+.sec-line {
+  position: absolute;
+  top: 0;
+  left: 6%;
+  right: 6%;
+  height: 1px;
+  pointer-events: none;
+  background: linear-gradient(90deg, transparent, rgba(238, 127, 32, 0.28), transparent);
+  overflow: hidden;
+}
+.sec-line::after {
+  content: '';
+  position: absolute;
+  inset: -1px 0;
+  width: 22%;
+  background: linear-gradient(90deg, transparent, rgba(247, 198, 155, 0.9), transparent);
+  filter: blur(0.5px);
+  opacity: 0;
+  transform: translate3d(-120%, 0, 0);
+}
+.rv .sec-line {
+  transform: scaleX(0.2);
+  opacity: 0;
+  transition: transform 1.3s cubic-bezier(0.2, 0.7, 0.2, 1), opacity 1s ease;
+}
+.rv.rv-on .sec-line {
+  transform: none;
+  opacity: 1;
+}
+.rv.rv-on .sec-line::after {
+  animation: sec-sweep 1.8s cubic-bezier(0.4, 0, 0.2, 1) 0.2s 1 both;
+}
+@keyframes sec-sweep {
+  0% {
+    opacity: 0;
+    transform: translate3d(-120%, 0, 0);
+  }
+  15% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+    transform: translate3d(480%, 0, 0);
+  }
+}
+
+/* ---- flow diagram pulses (sealed data on the lanes and the relay paths) ---- */
+.flow-pulse {
+  fill: none;
+  stroke: #f7c69b;
+  stroke-width: 2.6;
+  stroke-linecap: round;
+  stroke-dasharray: 50 950;
+  stroke-dashoffset: 1000;
+  opacity: 0;
+  filter: drop-shadow(0 0 5px rgba(238, 127, 32, 0.95));
+}
+.flow-pulse-relay {
+  stroke-width: 2;
+}
+
+/* ---- steps light up in sequence; Knows chips pulse once ---- */
+.rv .rv-in .step-dot.bg-accent {
+  animation: step-glow 1.4s ease-out calc(var(--rv-d, 0s) + 0.35s) 1 both;
+}
+@keyframes step-glow {
+  0% {
+    box-shadow: 0 0 0 0 rgba(238, 127, 32, 0);
+  }
+  35% {
+    box-shadow: 0 0 0 6px rgba(238, 127, 32, 0.22), 0 0 26px rgba(238, 127, 32, 0.75);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(238, 127, 32, 0), 0 0 12px rgba(238, 127, 32, 0.35);
+  }
+}
+.rv .rv-in .bg-knows {
+  animation: knows-pulse 1.3s ease-out calc(var(--rv-d, 0s) + 0.45s) 1 both;
+}
+@keyframes knows-pulse {
+  0% {
+    box-shadow: 0 0 0 0 rgba(238, 127, 32, 0.6), 0 0 14px rgba(238, 127, 32, 0.45);
+  }
+  60% {
+    box-shadow: 0 0 0 7px rgba(238, 127, 32, 0), 0 0 22px rgba(238, 127, 32, 0.6);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(238, 127, 32, 0), 0 0 14px rgba(238, 127, 32, 0.45);
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .flow-pulse {
+    opacity: 1;
+    animation: flow-run 3.6s linear infinite;
+  }
+  .flow-pulse-relay {
+    animation-duration: 3s;
+  }
+
+  /* Eyebrow dots breathe. */
+  main .eyebrow::before {
+    animation: eyebrow-breathe 3.2s ease-in-out infinite;
+  }
+
+  /* FAQ: smooth open and close where the browser supports animating details content. */
+  .faq details::details-content {
+    block-size: 0;
+    opacity: 0;
+    overflow: clip;
+    transition:
+      block-size 0.35s cubic-bezier(0.2, 0.7, 0.2, 1),
+      opacity 0.3s ease,
+      content-visibility 0.35s allow-discrete;
+  }
+  .faq details[open]::details-content {
+    block-size: auto;
+    opacity: 1;
+  }
+  .faq-chevron {
+    transition: transform 0.35s cubic-bezier(0.2, 0.7, 0.2, 1), color 0.2s;
+  }
+  .faq details[open] .faq-chevron {
+    color: var(--accent);
+  }
+}
+@keyframes flow-run {
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+@keyframes eyebrow-breathe {
+  0%,
+  100% {
+    box-shadow: 0 0 10px var(--accent), 0 0 3px var(--peach);
+  }
+  50% {
+    box-shadow: 0 0 18px var(--accent), 0 0 6px var(--peach), 0 0 0 3px rgba(238, 127, 32, 0.15);
+  }
+}
