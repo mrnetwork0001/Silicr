@@ -1,0 +1,30 @@
+{
+  "name": "@silicr/web",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "next dev -p 7703",
+    "dev:mock": "NEXT_PUBLIC_SILICR_MOCK=1 next dev -p 7703",
+    "build": "next build",
+    "start": "next start -p 7703",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "vitest run --passWithNoTests"
+  },
+  "dependencies": {
+    "@silicr/api": "workspace:*",
+    "clsx": "^2.1.1",
+    "next": "16.3.8",
+    "react": "19.3.0",
+    "react-dom": "19.3.0"
+  },
+  "devDependencies": {
+    "@tailwindcss/postcss": "4.3.3",
+    "@types/node": "^26.6.3",
+    "@types/react": "19.3.0",
+    "@types/react-dom": "19.3.0",
+    "postcss": "^8.5.28",
+    "tailwindcss": "4.3.3",
+    "typescript": "^7.0.2"
+  }
+}
