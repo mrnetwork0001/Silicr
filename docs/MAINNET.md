@@ -1,6 +1,6 @@
 # Silicr on Zcash mainnet
 
-Silicr's real-chain mode runs on Zcash **mainnet with small balances**, or on testnet ([docs/ZCASH_SETUP.md](ZCASH_SETUP.md)). The zero-setup demo (`silicr demo`) touches neither: it runs a simulated chain. This page is the mainnet checklist. Items marked *unverified* have not been exercised on mainnet yet, and nothing here claims that a mainnet run has happened.
+Silicr runs on Zcash testnet or mainnet: **mainnet with small balances**, or testnet ([docs/ZCASH_SETUP.md](ZCASH_SETUP.md)). The simulated chain exists only inside the test suite (and `pnpm verify`). `silicr demo` runs on testnet and refuses `--network main`. This page is the mainnet checklist. Items marked *unverified* have not been exercised on mainnet yet, and nothing here claims that a mainnet run has happened.
 
 ## Why mainnet
 
@@ -10,7 +10,7 @@ Silicr's real-chain mode runs on Zcash **mainnet with small balances**, or on te
 
 ## Guardrails
 
-- **Explicit opt-in.** Mainnet only with `--network main`. Nothing defaults to it, and tests, `silicr demo` and `pnpm verify` never touch it.
+- **Explicit opt-in.** Mainnet only with `--network main`. Nothing defaults to it, and tests, `silicr demo` (testnet only) and `pnpm verify` never touch it. `--public-demo` daemons refuse to start on mainnet.
 - **Spend caps are required.** A daemon refuses to start on mainnet without a per-request cap and a total cap in its config. The web terminal shows them next to the network ("cap: spent X of Y ZEC (per request ≤ Z)") and refuses a request whose worst case, max price × duration plus fees, exceeds them; the daemon checks again before anything is sent. *Unverified:* the config keys, which are being added with this document; `silicr init --help` is the reference.
 - **Your go-ahead before real money moves.** The terminal prints the amount and the cap before a mainnet request and asks for a second click. Never let a script send on mainnet on your behalf without reading what it is about to spend.
 - **Small balances.** Fund what a demo needs (below) plus a little margin. Silicr wallets are not a place to keep savings.
@@ -28,7 +28,7 @@ Silicr's real-chain mode runs on Zcash **mainnet with small balances**, or on te
 
 1. `silicr init --role buyer --network main --data .silicr/wallets/main-buyer` creates the wallet and prints its `u1…` address: a unified address whose only receiver is Orchard, so funds can only arrive shielded.
 2. Send a small amount of ZEC to that address from any shielded wallet. Pay from a shielded balance; a wallet that insists on a transparent send cannot pay this address at all, which is the point.
-3. The funds become **spendable after 10 confirmations** (the ZIP 315 default for received notes): about **12 to 13 minutes** at 75-second blocks. `silicr status` shows the balance moving from `pending` to `spendable`.
+3. The funds become **spendable after 10 confirmations** (the ZIP 315 default for received notes): about **12 to 13 minutes** at 75-second blocks (about 4 minutes once NU7 brings 25-second blocks to mainnet at height 3,543,405, around Nov 3, 2026). `silicr status` shows the balance moving from `pending` to `spendable`.
 4. The provider needs a little ZEC too: each bid and each CLOSE costs 0.0001 ZEC. After its first job, its earnings cover that. Use `--data .silicr/wallets/main-provider` for its wallet.
 
 ## Funding and withdrawing
@@ -41,7 +41,7 @@ The wallet lives in the daemon's data dir; its keys never leave your machine. Yo
 
 ## Timing on mainnet
 
-Mainnet blocks arrive about every 75 seconds. The mainnet timing profile uses longer intervals than testnet (on the order of ten minutes), a payment lead ahead of each interval, and longer grace and timeout windows, so a job sends fewer transactions per hour. `silicr status` shows the live values for your daemons. The worst-case buyer exposure is unchanged: the rest of the interval in progress plus one prepaid interval, (I + lead) / I intervals as in ARCHITECTURE.md §4. *Unverified on mainnet:* the profile numbers; they are being set with this document.
+Mainnet blocks arrive about every 75 seconds until NU7 activates at height 3,543,405 (around Nov 3, 2026), then about every 25 seconds, as on testnet since its NU7. The mainnet timing profile uses longer intervals than testnet (on the order of ten minutes), a payment lead ahead of each interval, and longer grace and timeout windows, so a job sends fewer transactions per hour. `silicr status` shows the live values for your daemons. The worst-case buyer exposure is unchanged: the rest of the interval in progress plus one prepaid interval, (I + lead) / I intervals as in ARCHITECTURE.md §4. *Unverified on mainnet:* the profile numbers; they are being set with this document.
 
 ## The explorer
 

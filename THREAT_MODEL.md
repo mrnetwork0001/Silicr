@@ -4,7 +4,7 @@ ZECATHON judges treat leaks as disqualifying. This document lists every party, w
 
 **Pool note.** Since the NU6.3 "Ironwood" upgrade (mainnet 2026-07-28), shielded value paid to Orchard receivers lives in the Ironwood pool. The legacy Orchard pool is withdraw-only, through a turnstile that publishes amounts. Silicr spends Ironwood notes only, so none of its transactions cross the turnstile.
 
-**Network note.** Silicr runs on Zcash mainnet (small balances, spend caps required) or testnet; the zero-setup demo uses a simulated chain. On mainnet, Silicr's transactions sit among every other shielded Ironwood transaction on the network, a far larger crowd than testnet, which weakens the traffic-shape inference in limit #4. Real funds raise the stakes of every limit below, so keep wallets small and read [docs/MAINNET.md](docs/MAINNET.md).
+**Network note.** Silicr runs on Zcash testnet or mainnet (small balances, spend caps required on mainnet); the simulated chain exists only inside the test suite (and `pnpm verify`). The public testnet demo is a shared testnet wallet behind `--public-demo` (preset jobs only, no withdraw or policy changes, refused on mainnet). On mainnet, Silicr's transactions sit among every other shielded Ironwood transaction on the network, a far larger crowd than testnet, which weakens the traffic-shape inference in limit #4. Real funds raise the stakes of every limit below, so keep wallets small and read [docs/MAINNET.md](docs/MAINNET.md).
 
 ## What each party learns
 

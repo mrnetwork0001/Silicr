@@ -79,7 +79,7 @@ Send testnet ZEC (TAZ) to the **buyer** address printed above. These faucets wer
 
 To follow the transaction, look it up at `https://zexplorer.app/testnet/tx/<txid>` or `https://testnet.zecblock.com/tx/<txid>`. Avoid testnet.zcashexplorer.app, which is stale.
 
-Received funds become **spendable after 10 confirmations**, and the wallet's own change after 3 (the ZIP 315 defaults). Testnet blocks currently arrive about every 14 s on average, but irregularly.
+Received funds become **spendable after 10 confirmations**, and the wallet's own change after 3 (the ZIP 315 defaults). Testnet blocks target 25 s since NU7 (mainnet activates NU7 at height 3,543,405, around Nov 3, 2026), and arrive irregularly.
 
 Run `npx tsx packages/zec/scripts/testnet-roundtrip.ts --no-send` again to watch the balance move from `pending` to `spendable`.
 
@@ -369,7 +369,7 @@ Measured on 2026-10-21 (M-series Mac, Tor 0.4.9.12, one hop of a fresh circuit):
 | `height()` once open | 1.1 s | |
 | Mempool stream | connected, 1 session | the stream reconnects on every block, through Tor each time |
 
-So expect a few seconds of extra latency per circuit and under a second per request afterwards, which is nothing next to 75-second blocks.
+So expect a few seconds of extra latency per circuit and under a second per request afterwards, which is nothing next to 25-second testnet blocks (75 s on mainnet until NU7).
 
 ### What it closes, and what it does not
 
@@ -432,7 +432,7 @@ silicr export-viewing-key --data .silicr/wallets/buyer            # testnet wall
 silicr export-viewing-key --data .silicr/wallets/main-buyer --yes  # mainnet; --yes acknowledges the warning (needed without a terminal)
 ```
 
-The command resolves the network from `--network`, else the dir's `config.json`, else the sidecar's `wallet.json`, and refuses memory-network dirs (a simulated chain has no key). It prints the warning on **stderr** and the key alone on **stdout**, so `silicr export-viewing-key … --yes > key.txt` captures just the key. The key never goes to a log file, to the daemon or to the relay. It works while the daemon is running (it reads the wallet database read-only via `zec-sidecar export-ufvk`).
+The command resolves the network from `--network`, else the dir's `config.json`, else the sidecar's `wallet.json`, and refuses anything that is not a testnet or mainnet wallet. It prints the warning on **stderr** and the key alone on **stdout**, so `silicr export-viewing-key … --yes > key.txt` captures just the key. The key never goes to a log file, to the daemon or to the relay. It works while the daemon is running (it reads the wallet database read-only via `zec-sidecar export-ufvk`).
 
 From code: `await backend.exportViewingKey()` on a sidecar backend (an optional method on `ZecBackend`), or `exportViewingKeyOffline({ dataDir, network })` from `@silicr/zec` for a wallet that is not open.
 
