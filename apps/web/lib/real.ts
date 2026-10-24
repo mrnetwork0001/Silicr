@@ -17,6 +17,10 @@ import type {
   RelayObserverResponse,
   RfqDto,
   StatusDto,
+  WalletDto,
+  WithdrawConfirmDto,
+  WithdrawRequest,
+  WithdrawResultDto,
 } from '@silicr/api';
 import { ApiError, DaemonClient, errorMessage } from './client';
 import { config } from './config';
@@ -236,6 +240,21 @@ export class RealDriver implements Driver {
   private requireProvider(): DaemonClient {
     if (!this.online.provider) throw new ApiError(`Provider daemon not connected (${config.providerUrl})`, 0, 'offline');
     return this.clients.provider;
+  }
+
+  async getWallet(role: Role): Promise<WalletDto> {
+    return this.clients[role].get<WalletDto>('/api/wallet', { timeoutMs: 8000 });
+  }
+
+  async withdraw(role: Role, req: WithdrawRequest): Promise<WithdrawResultDto | WithdrawConfirmDto> {
+    try {
+      // Building and proving a shielded transaction takes a while on a real chain.
+      return await this.clients[role].post<WithdrawResultDto>('/api/wallet/withdraw', req, { timeoutMs: 180_000 });
+    } catch (e) {
+      const body = e instanceof ApiError ? (e.body as Partial<WithdrawConfirmDto> | null) : null;
+      if (e instanceof ApiError && e.code === 'confirm_required' && body && typeof body.confirm === 'string' && body.summary) return body as WithdrawConfirmDto;
+      throw e;
+    }
   }
 
   async createRfq(req: NewRfqRequest): Promise<{ rfqId: string }> {

@@ -8,11 +8,14 @@ import type { DaemonEvent, ErrorDto } from '@silicr/api';
 export class ApiError extends Error {
   readonly status: number;
   readonly code: string;
-  constructor(message: string, status: number, code: string) {
+  /** The full error body (e.g. WithdrawConfirmDto's token and summary). */
+  readonly body: unknown;
+  constructor(message: string, status: number, code: string, body?: unknown) {
     super(message);
     this.name = 'ApiError';
     this.status = status;
     this.code = code;
+    this.body = body;
   }
 }
 
@@ -26,6 +29,7 @@ const CODE_PREFIX: Record<string, string> = {
   method_not_allowed: 'Not supported by this daemon',
   unsupported: 'Not supported by this daemon',
   internal: 'Daemon error',
+  busy: 'Busy',
 };
 
 export function errorMessage(e: unknown): string {
@@ -92,7 +96,7 @@ export class DaemonClient {
         } catch {
           // non-JSON error body
         }
-        throw new ApiError(dto?.error || `${res.status} ${res.statusText}`.trim(), res.status, dto?.code || `http_${res.status}`);
+        throw new ApiError(dto?.error || `${res.status} ${res.statusText}`.trim(), res.status, dto?.code || `http_${res.status}`, dto);
       }
       if (res.status === 204) return undefined as T;
       const text = await res.text();

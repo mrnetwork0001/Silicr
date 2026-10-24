@@ -5,7 +5,7 @@
  * answers at load. The UI always shows a MOCK DATA banner in mock mode.
  */
 
-import type { BuyerFault, NewRfqRequest, ProviderFault, ProviderPolicyDto, RfqDto, StatusDto } from '@silicr/api';
+import type { BuyerFault, NewRfqRequest, ProviderFault, ProviderPolicyDto, RfqDto, StatusDto, WalletDto, WithdrawConfirmDto, WithdrawRequest, WithdrawResultDto } from '@silicr/api';
 import { DaemonClient, errorMessage } from './client';
 import { config } from './config';
 import { actions } from './store';
@@ -33,6 +33,10 @@ export interface Driver {
   providerFault(rfqId: string, fault: ProviderFault): Promise<void>;
   /** Provider stops a job it is serving (POST /api/jobs/:id/stop). */
   stopJob(rfqId: string): Promise<void>;
+  /** GET /api/wallet on one daemon: deposit address, ZIP 321 URI, balance. */
+  getWallet(role: 'buyer' | 'provider'): Promise<WalletDto>;
+  /** POST /api/wallet/withdraw. On mainnet the first call returns the confirm request (409) instead of sending. */
+  withdraw(role: 'buyer' | 'provider', req: WithdrawRequest): Promise<WithdrawResultDto | WithdrawConfirmDto>;
   /** Mock only: submit the default demo request with auto-accept. */
   replayDemo?(): Promise<string>;
 }
