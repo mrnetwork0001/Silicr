@@ -251,6 +251,7 @@ export class ProviderNode extends NodeBase {
     }
     await mkdir(this.workDir, { recursive: true, mode: 0o700 });
     await this.publishDirectory();
+    await this.initWallet();
     this.watcher = new NoteWatcher({
       backend: this.backend,
       decode: (m) => this.deps.protocol.decodeMemo(m),
@@ -407,6 +408,12 @@ export class ProviderNode extends NodeBase {
     this.changed(j);
   }
 
+  /** A job is won, running or paused: its CLOSE needs a fee. */
+  busy(): boolean {
+    for (const j of this.jobs.values()) if (LIVE.includes(j.state)) return true;
+    return false;
+  }
+
   /** A provider only ever spends fees (BIDs, CLOSEs): their sum over every job, persisted with the jobs. */
   capSpentZats(): bigint {
     let sum = 0n;
@@ -446,6 +453,7 @@ export class ProviderNode extends NodeBase {
   private async onNote(e: NoteEvent): Promise<void> {
     const d = e.decoded;
     this.received(e.note.txid);
+    this.trackIncoming(e);
     if (!d) return;
     switch (d.msg.t) {
       case 'RFQ':

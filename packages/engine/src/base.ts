@@ -1,15 +1,16 @@
 // What buyer and provider nodes share: wallet, relay, events, leak log, chain observations.
-import type { DaemonEvent, FactKey, LeakField, LeakObservation, Party, ProviderDto, PublicTxViewDto, Role, StatusDto } from '@silicr/api';
+import type { DaemonEvent, FactKey, LeakField, LeakObservation, Party, ProviderDto, PublicTxViewDto, Role, StatusDto, WalletDto, WithdrawConfirmDto, WithdrawRequest, WithdrawResultDto } from '@silicr/api';
 import { isLoopbackHost, type RelayClient } from '@silicr/relay';
 import type { Network, Output, SendResult, ZecBackend } from '@silicr/zec';
 import type { Transport } from '@silicr/protocol';
 import { resolveDeps, type EngineDeps } from './deps.ts';
 import { chainFields, FACTS_BY_LABEL, LeakRecorder, publicTxViewDto, field, type TxFacts } from './leaks.ts';
 import { DirectoryClient } from './directory.ts';
-import { TxSender, type NoteWatcher } from './chain.ts';
+import { TxSender, isInsufficientFunds, type NoteEvent, type NoteWatcher } from './chain.ts';
 import { defaultProfile, type TimingProfile } from './profile.ts';
 import { EngineError } from './errors.ts';
-import { Emitter, errMsg } from './util.ts';
+import { Emitter, errMsg, hex, randomBytes } from './util.ts';
+import { formatZec, parseZats, parseZec } from './zats.ts';
 import { MemoTransport, type BlobTransport } from './memo-transport.ts';
 
 export const ENGINE_VERSION = '0.1.0';
@@ -94,6 +95,11 @@ export abstract class NodeBase {
   /** Transactions this node sent or received: the only ones it ever inspects. */
   protected readonly knownTx = new Set<string>();
   private defaultAddress: string | null = null;
+  /** Transactions this node broadcast (so its own change and padding never look like deposits). */
+  private readonly sentTx = new Set<string>();
+  private rawAddress: string | null = null;
+  private lastIncoming: { txid: string; zats: bigint; height: number | null; indexes: Set<number> } | null = null;
+  private readonly withdrawConfirms = new Map<string, { to: string; amount: string; force: boolean; expiresAt: number }>();
 
   constructor(prefix: string, o: NodeOptions) {
     this.blobTransport = o.blobTransport ?? 'relay';
@@ -224,10 +230,11 @@ export abstract class NodeBase {
     return this.defaultAddress;
   }
 
-  protected async send(outputs: Output[], ctx: { rfqId?: string; what: string; sealed: TxFacts }): Promise<SendResult> {
+  protected async send(outputs: Output[], ctx: { rfqId?: string; what: string; sealed: TxFacts; retryMs?: number }): Promise<SendResult> {
     const outs = outputs.map((o) => ({ ...o, to: this.guard(o.to) }));
-    const r = await this.sender.send(outs);
+    const r = await this.sender.send(outs, ctx.retryMs === undefined ? {} : { retryMs: ctx.retryMs });
     this.knownTx.add(r.txid.toLowerCase());
+    this.sentTx.add(r.txid.toLowerCase());
     void this.observeTx(r.txid, { rfqId: ctx.rfqId, event: 'tx-broadcast', summary: `${ctx.what}: what the public chain shows`, sealed: ctx.sealed });
     return r;
   }
@@ -304,6 +311,165 @@ export abstract class NodeBase {
     };
   }
 
+  // ------------------------------------------------------------------ wallet connection
+
+  /** A request or job is live: withdrawing now could starve it. */
+  abstract busy(): boolean;
+
+  /**
+   * Subclasses call this for every note their watcher delivers. A deposit is a note paid to the
+   * default address that isn't a Silicr message and wasn't sent by this node. Never logged.
+   */
+  protected trackIncoming(e: NoteEvent): void {
+    if (e.decoded || e.note.pool !== 'orchard') return;
+    const txid = e.note.txid.toLowerCase();
+    if (this.sentTx.has(txid)) return;
+    if (e.note.memo[0] === 0xff) return; // arbitrary-data memos are Silicr traffic (BLOBs, padding), never a wallet's deposit
+    if (this.rawAddress === null || e.note.toAddress !== this.rawAddress) return;
+    const cur = this.lastIncoming;
+    if (cur && cur.txid === txid) {
+      if (!cur.indexes.has(e.note.index)) {
+        cur.indexes.add(e.note.index);
+        cur.zats += e.note.zats;
+      }
+      if (e.note.height !== null) cur.height = e.note.height;
+      return;
+    }
+    if (!e.firstSeen) return;
+    this.lastIncoming = { txid, zats: e.note.zats, height: e.note.height, indexes: new Set([e.note.index]) };
+  }
+
+  /** Called from start(): remember the raw default address deposits arrive at. */
+  protected async initWallet(): Promise<void> {
+    this.rawAddress = await this.backend.address();
+    for (const t of this.knownTx) this.sentTx.add(t);
+  }
+
+  /** Confirmations before notes are spendable: ZIP 315 untrusted (10) for received funds, trusted for change. */
+  confirmationsRequired(): { received: number; change: number } {
+    return { received: this.network === 'memory' ? 1 : RECEIVED_CONFIRMATIONS, change: this.profile.changeConfirmations };
+  }
+
+  /** GET /api/wallet. `amount` is decimal ZEC (ZIP 321), echoed into the URI. */
+  async wallet(amount?: string | null): Promise<WalletDto> {
+    let amountZats: bigint | null = null;
+    if (amount !== undefined && amount !== null && amount !== '') {
+      if (!/^\d{1,8}(\.\d{1,8})?$/.test(amount)) throw new EngineError('bad_request', 'amount must be decimal ZEC with at most 8 decimals, e.g. 0.05');
+      amountZats = parseZec(amount);
+      if (amountZats <= 0n) amountZats = null;
+    }
+    if (this.rawAddress === null) this.rawAddress = await this.backend.address();
+    const [height, balance, address] = await Promise.all([this.backend.height(), this.backend.balance(), this.address()]);
+    const li = this.lastIncoming;
+    return {
+      role: this.role,
+      network: this.network,
+      height,
+      address,
+      zip321Uri: zip321Uri(address, amountZats),
+      balance: { spendable: balance.spendable.toString(), pending: balance.pending.toString() },
+      confirmationsRequired: this.confirmationsRequired(),
+      feeEstimateZats: feeForActions(2).toString(),
+      busy: this.busy(),
+      ...(li
+        ? { lastIncoming: { txid: li.txid, zats: li.zats.toString(), height: li.height, confirmations: li.height === null ? 0 : Math.max(0, height - li.height + 1) } }
+        : {}),
+    };
+  }
+
+  /**
+   * POST /api/wallet/withdraw: the user moving their own funds out, to an Orchard receiver only.
+   * Not counted against the spend cap. Mainnet needs a confirm token echoed within 60 s.
+   */
+  async withdraw(req: WithdrawRequest): Promise<WithdrawResultDto> {
+    if (!req || typeof req !== 'object') throw new EngineError('bad_request', 'body must be { to, amountZats, confirm? }');
+    if (typeof req.to !== 'string' || req.to.trim() === '') throw new EngineError('bad_request', 'to must be a unified address');
+    const to = this.guard(req.to.trim()); // PrivacyError → 400 'privacy', with the guard's message
+    const all = req.amountZats === 'all';
+    let amount: bigint | null = null;
+    if (!all) {
+      try {
+        amount = parseZats(req.amountZats, 'amountZats');
+      } catch (e) {
+        throw new EngineError('bad_request', `${errMsg(e)} or "all"`);
+      }
+      if (amount < this.minOutput || amount <= 0n) throw new EngineError('bad_request', `amountZats must be at least ${this.minOutput > 0n ? this.minOutput : 1n}`);
+    }
+    const force = req.force === true;
+    if (this.busy() && !force) {
+      throw new EngineError('busy', `a ${this.role === 'buyer' ? 'request' : 'job'} is live: withdrawing now could leave it without funds. Wait for it to finish, or pass force: true`, 409);
+    }
+    const balance = await this.backend.balance();
+    const fee = feeForActions(2);
+    const zats = all ? balance.spendable - fee : amount!;
+    if (zats <= 0n || zats < this.minOutput) {
+      throw new EngineError('insufficient_funds', `nothing to withdraw: ${formatZec(balance.spendable)} ZEC spendable, the fee is about ${formatZec(fee)} ZEC` + (balance.pending > 0n ? ` (${formatZec(balance.pending)} ZEC still confirming)` : ''), 402);
+    }
+    if (!all && zats + fee > balance.spendable) {
+      throw new EngineError('insufficient_funds', `withdrawing ${formatZec(zats)} ZEC needs about ${formatZec(zats + fee)} ZEC with the fee; ${formatZec(balance.spendable)} ZEC is spendable` + (balance.pending > 0n ? ` (${formatZec(balance.pending)} ZEC still confirming)` : ''), 402);
+    }
+    const amountKey = all ? 'all' : zats.toString();
+
+    if (this.network === 'main') {
+      const now = Date.now();
+      for (const [k, v] of this.withdrawConfirms) if (v.expiresAt < now) this.withdrawConfirms.delete(k);
+      const pending = typeof req.confirm === 'string' ? this.withdrawConfirms.get(req.confirm) : undefined;
+      if (!pending || pending.to !== to || pending.amount !== amountKey || pending.force !== force) {
+        const token = hex(randomBytes(16));
+        const expiresAt = now + WITHDRAW_CONFIRM_MS;
+        this.withdrawConfirms.set(token, { to, amount: amountKey, force, expiresAt });
+        const summary: WithdrawConfirmDto['summary'] = { to, zats: zats.toString(), feeZats: fee.toString(), network: this.network, all };
+        throw new EngineError(
+          'confirm_required',
+          `${req.confirm ? 'confirm token unknown, expired or for a different withdraw. ' : ''}Withdrawing ${formatZec(zats)} ZEC of REAL ZEC (fee about ${formatZec(fee)} ZEC) on mainnet: send the same request again with confirm within 60 s`,
+          409,
+          { confirm: token, expiresAt, summary },
+        );
+      }
+      this.withdrawConfirms.delete(req.confirm!);
+    }
+
+    const r = all ? await this.sweep(to, balance.spendable) : await this.sendWithdraw(to, zats);
+    this.log(`withdraw sent: ${formatZec(r.zats)} ZEC, fee ${formatZec(r.feeZats)} ZEC`);
+    const party: Party = this.party;
+    this.leaks.record({
+      party,
+      event: 'withdraw',
+      txid: r.txid,
+      summary: `withdraw: ${formatZec(r.zats)} ZEC moved out of this wallet to the owner's own shielded address`,
+      fields: [
+        field('Destination', shortAddr(to), true, true, []),
+        field('Amount', `${formatZec(r.zats)} ZEC`, true, true, ['amount']),
+        field('Fee', `${formatZec(r.feeZats)} ZEC`, true, false, []),
+        field('Pool', 'Ironwood shielded to an Orchard receiver: no turnstile, amount hidden on-chain', true, false, []),
+      ],
+    });
+    return { txid: r.txid, zats: r.zats.toString(), feeZats: r.feeZats.toString(), network: this.network };
+  }
+
+  private async sendWithdraw(to: string, zats: bigint): Promise<{ txid: string; zats: bigint; feeZats: bigint }> {
+    const r = await this.send([{ to, zats, memo: emptyMemo() }], { what: 'withdraw', sealed: WITHDRAW_FACTS });
+    return { txid: r.txid, zats, feeZats: r.feeZats };
+  }
+
+  /** Sweep: no change output, so the fee must be exact. ZIP 317 grows with the notes spent; try upwards. */
+  private async sweep(to: string, spendable: bigint): Promise<{ txid: string; zats: bigint; feeZats: bigint }> {
+    let last: unknown = null;
+    for (let actions = 2; actions <= MAX_SWEEP_ACTIONS; actions++) {
+      const fee = feeForActions(actions);
+      const zats = spendable - fee;
+      if (zats <= 0n || zats < this.minOutput) break;
+      try {
+        const r = await this.send([{ to, zats, memo: emptyMemo() }], { what: 'withdraw', sealed: WITHDRAW_FACTS, retryMs: 0 });
+        return { txid: r.txid, zats, feeZats: r.feeZats };
+      } catch (e) {
+        if (!isInsufficientFunds(e)) throw e;
+        last = e;
+      }
+    }
+    throw last ?? new EngineError('insufficient_funds', 'nothing to withdraw after the fee', 402);
+  }
+
   abstract status(): Promise<StatusDto>;
   abstract start(): Promise<void>;
   abstract close(): Promise<void>;
@@ -318,6 +484,36 @@ export abstract class NodeBase {
   ): void {
     this.leaks.record({ party, event, summary, fields: pairs.map(([l, v, r, s, f]) => field(l, v, r, s, f ?? FACTS_BY_LABEL[l] ?? [])), ...extra });
   }
+}
+
+/** ZIP 315 untrusted confirmations (the sidecar's default) before received notes are spendable. */
+const RECEIVED_CONFIRMATIONS = 10;
+const WITHDRAW_CONFIRM_MS = 60_000;
+const MAX_SWEEP_ACTIONS = 40;
+/** ZIP 317 marginal fee per logical action. */
+const MARGINAL_FEE_ZATS = 5000n;
+/** A withdraw's memo is empty and its recipient is the owner: it carries none of the key facts. */
+const WITHDRAW_FACTS: TxFacts = { memo: [], sender: [], recipients: [] };
+
+/** ZIP 317: marginal fee × max(2, logical actions). */
+export function feeForActions(actions: number): bigint {
+  return MARGINAL_FEE_ZATS * BigInt(Math.max(2, actions));
+}
+
+/** ZIP 302 "no memo": 0xF6 followed by zeros. */
+function emptyMemo(): Uint8Array {
+  const m = new Uint8Array(512);
+  m[0] = 0xf6;
+  return m;
+}
+
+/** ZIP 321 payment URI for one Orchard-only UA, amount in decimal ZEC. */
+export function zip321Uri(address: string, amountZats: bigint | null = null): string {
+  return amountZats && amountZats > 0n ? `zcash:${address}?amount=${formatZec(amountZats)}` : `zcash:${address}`;
+}
+
+function shortAddr(a: string): string {
+  return a.length > 24 ? `${a.slice(0, 14)}…${a.slice(-8)}` : a;
 }
 
 function hostOf(url: string): string {

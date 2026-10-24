@@ -63,6 +63,8 @@ export async function startDaemon(o: DaemonOptions): Promise<RunningDaemon> {
       } },
     { method: 'GET', re: /^\/api\/chain\/tx\/([0-9a-fA-F]{8,128})$/, handle: async (c) => send(c, 200, await node.inspectTx(c.params[0]!)) },
     { method: 'GET', re: /^\/api\/events$/, handle: async (c) => openEvents(c) },
+    { method: 'GET', re: /^\/api\/wallet$/, handle: async (c) => send(c, 200, await node.wallet(c.url.searchParams.get('amount'))) },
+    { method: 'POST', re: /^\/api\/wallet\/withdraw$/, handle: async (c) => send(c, 200, await node.withdraw((await readJson(c)) as never)) },
 
     // buyer
     { method: 'GET', re: /^\/api\/rfqs$/, role: 'buyer', handle: async (c) => send(c, 200, buyer().listRfqs()) },

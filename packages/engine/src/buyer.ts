@@ -251,6 +251,7 @@ export class BuyerNode extends NodeBase {
       }
       this.resume(r);
     }
+    await this.initWallet();
     this.watcher = new NoteWatcher({
       backend: this.backend,
       decode: (m) => this.deps.protocol.decodeMemo(m),
@@ -316,6 +317,12 @@ export class BuyerNode extends NodeBase {
     if (!r) return;
     r.feesZats += feeZats + valueZats;
     this.changed(r);
+  }
+
+  /** Any request not yet closed, expired or failed: its ACCEPT and PAYs need the balance. */
+  busy(): boolean {
+    for (const r of this.rfqs.values()) if (r.state === 'broadcasting' || r.state === 'collecting' || ACTIVE.includes(r.state)) return true;
+    return false;
   }
 
   /** Paid to providers plus fees, over every request this data dir has ever made (persisted with them). */
@@ -677,6 +684,7 @@ export class BuyerNode extends NodeBase {
   private async onNote(e: NoteEvent): Promise<void> {
     const d = e.decoded;
     this.received(e.note.txid);
+    this.trackIncoming(e);
     if (!d) return;
     if (d.msg.t === 'BID') await this.onBid(e, d.msg, d);
     else if (d.msg.t === 'CLOSE') await this.onProviderClose(e, d.msg, d);

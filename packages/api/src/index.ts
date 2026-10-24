@@ -33,6 +33,8 @@
  *   POST /api/jobs/:id/fault { fault: ProviderFault }  → ProviderJobDto (provider; demo fault injection)
  *   POST /api/jobs/:id/stop              → ProviderJobDto              (provider)
  *   POST /api/rfqs/:id/migrate MigrateRequest → RfqDto                  (buyer; the NEW RFQ, resumed from the latest checkpoint)
+ *   GET  /api/wallet?amount=<ZEC>        → WalletDto                   (both; deposit address, ZIP 321 URI, balance)
+ *   POST /api/wallet/withdraw WithdrawRequest → WithdrawResultDto       (both; 409 WithdrawConfirmDto on mainnet first)
  * Errors: non-2xx with ErrorDto.
  *
  * On connect, /api/events first sends a snapshot: one 'status' event, then the 20 most recent
@@ -60,6 +62,7 @@ export interface ErrorDto {
    * Machine-readable code: 'privacy', 'insufficient_funds', 'not_found', 'bad_request', 'wrong_role',
    * 'conflict', 'forbidden', 'method_not_allowed', 'unsupported', 'internal', 'spend_cap' (request exceeds the daemon's cap)
    * or 'blob_too_large' (memo transport: the sealed job, result or log batch exceeds what memos carry; use the relay).
+   * Wallet: 'confirm_required' (409, WithdrawConfirmDto: mainnet withdraw, echo the token) and 'busy' (409: a job is live).
    */
   code: string;
 }
@@ -420,3 +423,55 @@ export type DaemonEvent =
   | { type: 'log'; rfqId: Hex; lines: string[] }
   | { type: 'leak'; observation: LeakObservation }
   | { type: 'chain.tx'; view: PublicTxViewDto };
+
+// ---------------------------------------------------------------------------
+// Wallet connection: fund the local wallet from the user's own Zcash wallet, withdraw back out.
+// Keys never leave the daemon: the web terminal only ever sees addresses, amounts and txids.
+
+/** GET /api/wallet[?amount=<decimal ZEC>] */
+export interface WalletDto {
+  role: Role;
+  network: NetworkName;
+  height: number;
+  /** Deposit address: this daemon's default Orchard-only UA. */
+  address: string;
+  /** ZIP 321 payment URI, "zcash:<ua>" plus "?amount=<ZEC>" when the request carried ?amount=. Render it as the QR. */
+  zip321Uri: string;
+  balance: { spendable: ZatsString; pending: ZatsString };
+  /** Confirmations before funds are spendable: notes received from others, and this wallet's own change. */
+  confirmationsRequired: { received: number; change: number };
+  /** ZIP 317 fee of a plain shielded withdraw (2 logical actions); more if many notes are spent. */
+  feeEstimateZats: ZatsString;
+  /** The most recent payment into this wallet from outside Silicr (a deposit), if any was seen since start. */
+  lastIncoming?: { txid: string; zats: ZatsString; height: number | null; confirmations: number };
+  /** A request or job is live: withdraws are refused (code 'busy') unless `force` is set. */
+  busy: boolean;
+}
+
+/** POST /api/wallet/withdraw */
+export interface WithdrawRequest {
+  /** Recipient: a unified address with an Orchard receiver (u1… / utest1…). Anything else: 400 'privacy'. */
+  to: string;
+  /** Zatoshis, or "all" to sweep the spendable balance minus the fee. */
+  amountZats: ZatsString | 'all';
+  /** Mainnet: the token from the 409 WithdrawConfirmDto, echoed within 60 s with the same to/amount. */
+  confirm?: string;
+  /** Withdraw even while a request or job is live (it may then run out of funds). */
+  force?: boolean;
+}
+
+export interface WithdrawResultDto {
+  txid: string;
+  /** Sent to the recipient. */
+  zats: ZatsString;
+  feeZats: ZatsString;
+  network: NetworkName;
+}
+
+/** 409 on mainnet: nothing was sent. Echo `confirm` in a second call to send. Not counted against the spend cap. */
+export interface WithdrawConfirmDto extends ErrorDto {
+  code: 'confirm_required';
+  confirm: string;
+  expiresAt: UnixMs;
+  summary: { to: string; zats: ZatsString; feeZats: ZatsString; network: NetworkName; all: boolean };
+}

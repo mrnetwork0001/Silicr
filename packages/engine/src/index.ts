@@ -3,7 +3,7 @@ export { BuyerNode, rankBids, GPU_SLUG, DEFAULT_MAX_CHECKPOINT_BYTES } from './b
 export type { BuyerNodeOptions, BuyerRfq, BuyerRfqDto, BuyerBid, BuyerFault } from './buyer.ts';
 export { ProviderNode } from './provider.ts';
 export type { ProviderNodeOptions, ProviderPolicy, ProviderJob, ProviderJobDtoExt, ProviderFault } from './provider.ts';
-export { NodeBase, ENGINE_VERSION, checkSpendCap } from './base.ts';
+export { NodeBase, ENGINE_VERSION, checkSpendCap, feeForActions, zip321Uri } from './base.ts';
 export type { NodeOptions, ProxyInfo, SpendCap } from './base.ts';
 export { startDaemon, DEFAULT_ALLOWED_ORIGINS, WEB_PORT } from './daemon.ts';
 export type { DaemonOptions, RunningDaemon } from './daemon.ts';
