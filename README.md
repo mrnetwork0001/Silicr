@@ -57,7 +57,7 @@ A hosted testnet stack runs at **https://app.silicr.38-49-213-208.sslip.io** (th
 
 | Flag | What it does |
 |---|---|
-| `--public-demo` | Refused on mainnet. `POST /api/rfqs` takes only `job: { preset: 'tiny-train' \| 'tiny-train-quick' }`, mapped to server-side example jobs (client paths, commands, images and env are ignored); `durationS` ≤ 900 s and `count` ≤ 1; one live request at a time (409 `busy`); 3 requests per IP per hour (429 `rate_limited`). Withdraw, `PUT /api/policy`, `POST /api/jobs/:id/stop` and migrate return 403 `demo_disabled`. Faults stay enabled: they are part of the demo. `GET /api/status` reports `publicDemo: true` and the presets. |
+| `--public-demo` | Refused on mainnet. `POST /api/rfqs` takes only `job: { preset: 'tiny-train' \| 'tiny-train-quick' }`, mapped to server-side example jobs (client paths, commands, images and env are ignored); `durationS` ≤ 900 s, `count` ≤ 1 and a max price ≤ 0.5 ZEC/h; one live request at a time (409 `busy`); 3 requests per IP per hour (429 `rate_limited`). Withdraw, `PUT /api/policy`, `POST /api/jobs/:id/stop` and migrate return 403 `demo_disabled`. Faults stay enabled: they are part of the demo. `GET /api/status` reports `publicDemo: true` and the presets. |
 | `--public-origin <url>` | Repeatable. An extra allowed Origin for CORS and an accepted `Host` (the URL's host name); the loopback rules stay as they are. |
 | `--trust-proxy` | Take the client IP for rate limits from `X-Forwarded-For` (only behind your own reverse proxy). |
 | `--host <addr>` | Bind address; anything other than loopback only together with `--public-origin`. |
