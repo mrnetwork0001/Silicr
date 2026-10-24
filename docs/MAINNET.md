@@ -31,6 +31,14 @@ Silicr's real-chain mode runs on Zcash **mainnet with small balances**, or on te
 3. The funds become **spendable after 10 confirmations** (the ZIP 315 default for received notes): about **12 to 13 minutes** at 75-second blocks. `silicr status` shows the balance moving from `pending` to `spendable`.
 4. The provider needs a little ZEC too: each bid and each CLOSE costs 0.0001 ZEC. After its first job, its earnings cover that. Use `--data .silicr/wallets/main-provider` for its wallet.
 
+## Funding and withdrawing
+
+The wallet lives in the daemon's data dir; its keys never leave your machine. Your own Zcash wallet talks to it only through the chain.
+
+- **Fund:** `silicr wallet --data .silicr/wallets/main-buyer` (or the **Wallet** button in the web terminal, or `/wallet`) prints the Orchard-only `u1…` address and a QR of its ZIP 321 URI (`zcash:<ua>`, add `--amount 0.02` to prefill the amount). Scan it with Zashi, Ywallet or any shielded wallet. The balance shows `pending` until 10 confirmations, then `spendable`; the last deposit's confirmations are shown as it confirms. `GET /api/wallet` serves the same data.
+- **Withdraw:** `silicr withdraw <u1…> <zec|all> --data .silicr/wallets/main-buyer`. The destination must be a unified address with an Orchard receiver: transparent, Sapling and TEX addresses are refused, because a cross-pool send publishes the amount. `all` sweeps the spendable balance minus the exact ZIP 317 fee. On mainnet the daemon first answers with a summary and a confirm token (nothing is sent); the CLI prints amount, fee and network and asks (or takes `--yes`), the web terminal asks for a second click, and the token must come back within 60 seconds.
+- A withdraw is you moving your own funds out, so it is **not** counted against the spend cap. It is refused while a request or job is live (it could starve the deal) unless you pass `--force`. Each withdraw shows up in the Leak Inspector as one shielded transaction.
+
 ## Timing on mainnet
 
 Mainnet blocks arrive about every 75 seconds. The mainnet timing profile uses longer intervals than testnet (on the order of ten minutes), a payment lead ahead of each interval, and longer grace and timeout windows, so a job sends fewer transactions per hour. `silicr status` shows the live values for your daemons. The worst-case buyer exposure is unchanged: the rest of the interval in progress plus one prepaid interval, (I + lead) / I intervals as in ARCHITECTURE.md §4. *Unverified on mainnet:* the profile numbers; they are being set with this document.

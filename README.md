@@ -42,6 +42,8 @@ One command starts a complete Silicr stack in a temp dir (simulated chain, real 
 
 `pnpm verify`, `pnpm test` and `silicr demo` never touch a real chain. The real-chain mode runs on Zcash mainnet (or testnet), with small amounts, unaudited.
 
+To fund a real-chain wallet, run `silicr wallet` (address and a ZIP 321 QR to scan with Zashi or any shielded wallet) or open **Wallet** in the web terminal; `silicr withdraw <u1…> <zec|all>` sends it back. Keys never leave your machine. See [docs/MAINNET.md](docs/MAINNET.md#funding-and-withdrawing).
+
 ## Repo guide
 - [PRODUCT_REQUIREMENTS.md](PRODUCT_REQUIREMENTS.md): scope, user flows, the 27-day build plan and the demo script.
 - [ARCHITECTURE.md](ARCHITECTURE.md): components, the memo protocol, settlement and the tech stack.
