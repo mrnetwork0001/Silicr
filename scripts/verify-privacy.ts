@@ -270,6 +270,7 @@ function rememberSigner(label: string): { signer: Signer; secret: Uint8Array } {
 
 async function main(): Promise<number> {
   const t0 = Date.now();
+  out('test harness: simulated chain');
   if (!existsSync(join(TINY_TRAIN, 'train.py'))) throw new Error(`examples/tiny-train/train.py is missing (looked in ${TINY_TRAIN})`);
 
   const root = await mkdtemp(join(tmpdir(), 'silicr-verify-'));
@@ -731,7 +732,7 @@ async function main(): Promise<number> {
       assert(r.bids.length === 1 && r.bids[0]!.providerId === provider.providerId, 'the bid list changed');
       assert(buyer.record(id)!.bids.every((b) => b.payTo !== malloryAddr), "mallory's pay-to address got in");
       const reasons = buyer.listLeaks({ rfqId: id }).filter((o) => o.event === 'bid-rejected').map((o) => o.summary);
-      assert(reasons.some((s) => /signature/.test(s)) && reasons.some((s) => /above the max/.test(s)) && reasons.some((s) => /not asked/.test(s)), `reasons: ${reasons.join(' | ')}`);
+      assert(reasons.some((s) => /signature/.test(s)) && reasons.some((s) => /above (the|private) max/.test(s)) && reasons.some((s) => /not asked/.test(s)), `reasons: ${reasons.join(' | ')}`);
       const accepted = await buyer.accept(id, hex(stranger.signer.publicKey)).then(() => null, (e: Error) => e.message);
       assert(accepted && /no valid bid/.test(accepted), `accepting the stranger: ${accepted}`);
       await buyer.stop(id);
