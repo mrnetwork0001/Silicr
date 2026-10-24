@@ -203,7 +203,10 @@ describe('silicr wallet / withdraw', () => {
     expect(text).toMatch(/memory: SIMULATED chain/);
 
     const dest = await stack.network.wallet('cli-dest').address();
-    const sent = await silicr('withdraw', dest, '0.01', '--daemon', url);
+    // The shared stack's provider may still be finishing an earlier test's job (409 busy) or hold
+    // only unconfirmed change: neither is what this test is about.
+    stack.network.mine();
+    const sent = await silicr('withdraw', dest, '0.01', '--force', '--daemon', url);
     expect(sent).toMatch(/sent\s+0\.01 ZEC/);
     expect(sent).toMatch(/txid\s+[0-9a-f]{64}/);
     await expect(silicr('withdraw', 'tmBsTi2xWTjUdEXnuTceL7fecEQKeWaPDJd', '0.01', '--daemon', url)).rejects.toThrow(/Refusing transparent address/);
