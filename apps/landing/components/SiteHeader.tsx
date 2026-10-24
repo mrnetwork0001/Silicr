@@ -1,8 +1,8 @@
 'use client';
 
-import { Menu, X } from '@/components/icons';
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { Wordmark } from './Logo';
+import { MobileDrawer } from './MobileDrawer';
 
 export const NAV = [
   { id: 'how', label: 'How it works' },
@@ -11,6 +11,8 @@ export const NAV = [
   { id: 'quickstart', label: 'Quick start' },
   { id: 'faq', label: 'FAQ' },
 ] as const;
+
+const DRAWER_LINKS = NAV.map((n) => ({ label: n.label, href: `#${n.id}` }));
 
 export function SiteHeader() {
   const [open, setOpen] = useState(false);
@@ -52,77 +54,61 @@ export function SiteHeader() {
     return () => io.disconnect();
   }, []);
 
-  useEffect(() => {
-    if (!open) return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setOpen(false);
-    };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [open]);
+  const close = useCallback(() => setOpen(false), []);
 
   return (
-    <header
-      aria-hidden={!shown || undefined}
-      inert={!shown}
-      className={`fixed inset-x-0 top-0 z-50 border-b border-line bg-black/70 backdrop-blur-xl transition-[opacity,transform] duration-300 ease-out ${
-        shown ? 'translate-y-0 opacity-100' : 'pointer-events-none -translate-y-full opacity-0'
-      }`}
-    >
-      <div className="flex h-16 items-center gap-3 px-4">
-        <a href="#top" className="shrink-0 rounded-md" aria-label="Silicr: back to top">
-          <Wordmark />
-        </a>
+    <>
+      <header
+        aria-hidden={!shown || undefined}
+        inert={!shown}
+        className={`fixed inset-x-0 top-0 z-50 border-b border-line bg-black/70 backdrop-blur-xl transition-[opacity,transform] duration-300 ease-out ${
+          shown ? 'translate-y-0 opacity-100' : 'pointer-events-none -translate-y-full opacity-0'
+        }`}
+      >
+        <div className="flex h-16 items-center gap-3 px-4">
+          <a href="#top" className="shrink-0 rounded-md" aria-label="Silicr: back to top">
+            <Wordmark />
+          </a>
 
-        <nav aria-label="Sections" className="ml-auto hidden lg:block">
-          <ul className="flex items-center gap-0.5">
-            {NAV.map((n) => (
-              <li key={n.id}>
-                <a
-                  href={`#${n.id}`}
-                  aria-current={active === n.id ? 'location' : undefined}
-                  className={`relative rounded-full px-2.5 py-1.5 text-[14px] font-semibold transition-colors xl:px-3 ${
-                    active === n.id
-                      ? 'text-white after:absolute after:bottom-0 after:left-1/2 after:size-1 after:-translate-x-1/2 after:rounded-full after:bg-accent after:shadow-[0_0_8px_var(--accent)]'
-                      : 'text-white/65 hover:text-white'
-                  }`}
-                >
-                  {n.label}
-                </a>
-              </li>
-            ))}
-          </ul>
-        </nav>
+          <nav aria-label="Sections" className="ml-auto hidden lg:block">
+            <ul className="flex items-center gap-0.5">
+              {NAV.map((n) => (
+                <li key={n.id}>
+                  <a
+                    href={`#${n.id}`}
+                    aria-current={active === n.id ? 'location' : undefined}
+                    className={`relative rounded-full px-2.5 py-1.5 text-[14px] font-semibold transition-colors xl:px-3 ${
+                      active === n.id
+                        ? 'text-white after:absolute after:bottom-0 after:left-1/2 after:size-1 after:-translate-x-1/2 after:rounded-full after:bg-accent after:shadow-[0_0_8px_var(--accent)]'
+                        : 'text-white/65 hover:text-white'
+                    }`}
+                  >
+                    {n.label}
+                  </a>
+                </li>
+              ))}
+            </ul>
+          </nav>
 
-        <div className="ml-auto flex items-center gap-1 sm:gap-2 lg:hidden">
-          <button
-            type="button"
-            className="inline-flex size-9 items-center justify-center rounded-full border border-white/20 bg-white/5 text-white transition-colors hover:bg-white/10 lg:hidden"
-            aria-expanded={open}
-            aria-controls="mobile-nav"
-            onClick={() => setOpen((v) => !v)}
-          >
-            {open ? <X className="size-5" aria-hidden /> : <Menu className="size-5" aria-hidden />}
-            <span className="sr-only">{open ? 'Close menu' : 'Open menu'}</span>
-          </button>
+          <div className="ml-auto flex items-center gap-1 sm:gap-2 lg:hidden">
+            <button
+              type="button"
+              data-burger
+              className={`lburger inline-flex size-11 items-center justify-center rounded-full border border-white/20 bg-white/5 text-white transition-colors hover:bg-white/10 lg:hidden${open ? ' open' : ''}`}
+              aria-expanded={open}
+              aria-controls="mobile-nav"
+              onClick={() => setOpen((v) => !v)}
+            >
+              <span aria-hidden />
+              <span aria-hidden />
+              <span aria-hidden />
+              <span className="sr-only">{open ? 'Close menu' : 'Open menu'}</span>
+            </button>
+          </div>
         </div>
-      </div>
 
-      <nav id="mobile-nav" aria-label="Sections" hidden={!open} className="border-t border-line bg-black/90 lg:hidden">
-        <ul className="grid grid-cols-2 gap-1 px-4 py-3">
-          {NAV.map((n) => (
-            <li key={n.id}>
-              <a
-                href={`#${n.id}`}
-                onClick={() => setOpen(false)}
-                className="block rounded-xl px-3 py-2.5 text-[15px] font-semibold text-white transition-colors hover:bg-hover"
-              >
-                {n.label}
-              </a>
-            </li>
-          ))}
-        </ul>
-      </nav>
-    </header>
+      </header>
+      <MobileDrawer id="mobile-nav" open={open} onClose={close} links={DRAWER_LINKS} active={active} />
+    </>
   );
 }

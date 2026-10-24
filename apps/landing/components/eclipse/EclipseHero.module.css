@@ -253,8 +253,8 @@
 
 .brDesktop { display: inline; }
 
-/* ---- phones ---- */
-@media (max-width: 720px) {
+/* ---- phones and tablets (≤ 900px): burger + left drawer, stacked copy ---- */
+@media (max-width: 900px) {
   .hero { --m: 1vw; min-height: 640px; }
   .nav { height: 76px; padding: 20px 16px 0; align-items: center; }
   .logo { height: 40px; font-size: 22px; gap: 8px; }
@@ -271,7 +271,17 @@
     border: 1px solid rgba(255, 255, 255, 0.18);
     background: rgba(255, 255, 255, 0.06);
   }
-  .menuBtn span { display: block; width: 16px; height: 1.6px; background: #fff; border-radius: 2px; }
+  .menuBtn span {
+    display: block;
+    width: 16px;
+    height: 1.6px;
+    background: #fff;
+    border-radius: 2px;
+    transition: transform 0.22s cubic-bezier(0.2, 0.7, 0.2, 1);
+  }
+  /* The two lines cross into an × while the drawer is open. */
+  .menuBtn[data-open] span:nth-child(1) { transform: translateY(3.3px) rotate(45deg); }
+  .menuBtn[data-open] span:nth-child(2) { transform: translateY(-3.3px) rotate(-45deg); }
   .dropdown {
     position: absolute;
     top: 70px;
@@ -312,6 +322,18 @@
   .stripItem { font-size: 15px; gap: 8px; }
   .stripIcon { width: 24px; height: 24px; }
   .die { height: calc(170vw * 1086 / 1448); }
+}
+
+/* ---- tablets (601–900px): the phone stack, centred and capped so it doesn't stretch ---- */
+@media (min-width: 601px) and (max-width: 900px) {
+  .copy { align-self: center; width: 100%; max-width: 640px; padding-top: 48px; }
+  .badge { height: 40px; font-size: 14px; }
+  .title { font-size: clamp(46px, 7.4vw, 60px); }
+  .sub { font-size: 17px; }
+  .ctas { width: auto; }
+  .primary, .outline { flex: none; min-width: 200px; height: 52px; }
+  .strip { width: 100%; }
+  .die { height: 60dvh; }
 }
 
 /* ---- reduced motion: no entrance, no marquee (DieScene stops its own pulses) ---- */

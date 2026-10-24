@@ -434,3 +434,82 @@
   z-index: -1;
   background: radial-gradient(ellipse at top, rgba(238, 127, 32, 0.07), transparent 70%);
 }
+
+/* ---------------------------------------------------------------------------
+ * Phone/tablet menu (components/MobileDrawer.tsx): a left drawer over a dimmed backdrop.
+ * The drawer only ever opens from a burger, which is hidden on desktop.
+ */
+.mdrawer-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 90;
+  border: 0;
+  background: rgba(0, 0, 0, 0.6);
+  backdrop-filter: blur(2px);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.25s;
+}
+.mdrawer-backdrop.show {
+  opacity: 1;
+  pointer-events: auto;
+}
+.mdrawer {
+  position: fixed;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  z-index: 91;
+  display: flex;
+  flex-direction: column;
+  width: min(88vw, 340px);
+  height: 100dvh;
+  padding-bottom: env(safe-area-inset-bottom);
+  background: linear-gradient(180deg, rgba(34, 18, 9, 0.55), rgba(10, 7, 5, 0.98) 40%), var(--panel);
+  border-right: 1px solid var(--line-strong);
+  transform: translateX(-100%);
+  visibility: hidden;
+  transition:
+    transform 0.25s cubic-bezier(0.2, 0.7, 0.2, 1),
+    visibility 0s linear 0.25s;
+}
+.mdrawer.open {
+  transform: none;
+  visibility: visible;
+  box-shadow: 20px 0 60px rgba(0, 0, 0, 0.55);
+  transition:
+    transform 0.25s cubic-bezier(0.2, 0.7, 0.2, 1),
+    visibility 0s;
+}
+/* The sticky header's burger: three lines that cross into an ×. */
+.lburger {
+  flex-direction: column;
+  gap: 4.5px;
+}
+.lburger > span[aria-hidden] {
+  display: block;
+  width: 16px;
+  height: 1.5px;
+  border-radius: 1px;
+  background: currentColor;
+  transition:
+    transform 0.22s cubic-bezier(0.2, 0.7, 0.2, 1),
+    opacity 0.2s;
+}
+.lburger.open > span:nth-child(1) {
+  transform: translateY(6px) rotate(45deg);
+}
+.lburger.open > span:nth-child(2) {
+  opacity: 0;
+}
+.lburger.open > span:nth-child(3) {
+  transform: translateY(-6px) rotate(-45deg);
+}
+@media (prefers-reduced-motion: reduce) {
+  .mdrawer,
+  .mdrawer.open,
+  .mdrawer-backdrop,
+  .lburger > span[aria-hidden] {
+    transition: none;
+  }
+}

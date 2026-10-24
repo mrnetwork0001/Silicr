@@ -1,7 +1,9 @@
 'use client';
 
 import { Inter, Poppins } from 'next/font/google';
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { MobileDrawer } from '../MobileDrawer';
+import { NAV } from '../SiteHeader';
 import { APP_URL } from '@/lib/config';
 import { DieScene } from './DieScene';
 import s from './EclipseHero.module.css';
@@ -75,6 +77,9 @@ function Mark() {
   );
 }
 
+/** The drawer lists every section, like the sticky header (the hero's inline nav keeps its four). */
+const DRAWER_LINKS = NAV.map((n) => ({ label: n.label, href: `#${n.id}` }));
+
 const WORDS = ['GPU', 'H100', 'A100', 'cluster'];
 
 export function EclipseHero() {
@@ -107,6 +112,7 @@ export function EclipseHero() {
     };
   }, []);
   const [menu, setMenu] = useState(false);
+  const closeMenu = useCallback(() => setMenu(false), []);
 
   const strip = (
     <div className={s.marquee}>
@@ -143,7 +149,9 @@ export function EclipseHero() {
         </nav>
         <button
           type="button"
+          data-burger
           className={s.menuBtn}
+          data-open={menu || undefined}
           aria-expanded={menu}
           aria-controls="eclipse-menu"
           aria-label={menu ? 'Close menu' : 'Open menu'}
@@ -152,15 +160,7 @@ export function EclipseHero() {
           <span />
           <span />
         </button>
-        {menu && (
-          <div id="eclipse-menu" className={s.dropdown}>
-            {LINKS.map((l) => (
-              <a key={l.href} href={l.href} onClick={() => setMenu(false)}>
-                {l.label}
-              </a>
-            ))}
-          </div>
-        )}
+        <MobileDrawer id="eclipse-menu" open={menu} onClose={closeMenu} links={DRAWER_LINKS} />
       </header>
 
       <div className={s.copy}>
