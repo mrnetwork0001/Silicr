@@ -172,6 +172,10 @@ export const Wallet = make(
   'Wallet',
   <><rect x="3.5" y="6.5" width="17" height="13" rx="2.5" /><path d="M6 6.5l9.5-3 1.5 3M20.5 10.5h-4a2.5 2.5 0 0 0 0 5h4" />{dot(16.8, 13, 1.15)}</>,
 );
+export const QrCode = make(
+  'QrCode',
+  <><rect x="3.5" y="3.5" width="7" height="7" rx="1.5" /><rect x="13.5" y="3.5" width="7" height="7" rx="1.5" /><rect x="3.5" y="13.5" width="7" height="7" rx="1.5" /><path d="M13.5 13.5h3v3M20.5 13.5v1M13.5 20.5h3M19.5 17.5v3h-1" />{dot(7, 7, 1.15)}</>,
+);
 
 /* ---- hardware and network ---- */
 export const Cpu = make(

@@ -1,10 +1,10 @@
 'use client';
 
 import clsx from 'clsx';
-import { ScanEye } from '@/components/icons';
+import { ScanEye, Wallet } from '@/components/icons';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { useEffect, useLayoutEffect, useRef, type ReactNode } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import { boot } from '@/lib/driver';
 import { isTypingTarget } from '@/lib/hooks';
 import { actions, getState, useSilicr } from '@/lib/store';
@@ -15,6 +15,7 @@ import { LogoMark } from './Logo';
 import { config } from '@/lib/config';
 import { MockBanner } from './MockBanner';
 import { Backdrop } from './Backdrop';
+import { WalletDrawer } from '../wallet/WalletDrawer';
 
 const NAV = [
   { href: '/', label: 'Market' },
@@ -30,6 +31,10 @@ export function AppShell({ children }: { children: ReactNode }) {
   const chromeRef = useRef<HTMLDivElement>(null);
   const mainRef = useRef<HTMLElement>(null);
   const pathname = usePathname();
+  // The Wallet slide-over: rendered outside the header (its backdrop-filter would trap a fixed child).
+  const [walletOpen, setWalletOpen] = useState(false);
+  const closeWallet = useCallback(() => setWalletOpen(false), []);
+  useEffect(() => setWalletOpen(false), [pathname]);
 
   // Panels fade-rise in on first load and on every route change, staggered. Opacity and transform only.
   useEffect(() => {
@@ -89,17 +94,19 @@ export function AppShell({ children }: { children: ReactNode }) {
       <Backdrop />
       <div ref={chromeRef} className="sticky top-0 z-40">
         {mode === 'mock' && <MockBanner />}
-        <Header />
+        <Header walletOpen={walletOpen} setWalletOpen={setWalletOpen} />
       </div>
+      <WalletDrawer open={walletOpen && !pathname.startsWith('/wallet')} onClose={closeWallet} />
       <main ref={mainRef} className="corona relative z-[1] mx-auto w-full max-w-[1600px] px-4 pb-16 pt-5 sm:px-6">{children}</main>
       <LeakInspector />
     </>
   );
 }
 
-function Header() {
+function Header({ walletOpen, setWalletOpen }: { walletOpen: boolean; setWalletOpen: (fn: (v: boolean) => boolean) => void }) {
   const pathname = usePathname();
   const open = useSilicr((s) => s.inspector.open);
+  const onWalletPage = pathname.startsWith('/wallet');
   return (
     <header className="border-b border-line bg-black/80 backdrop-blur-md">
       <div className="mx-auto flex h-14 max-w-[1600px] items-center gap-2 px-4 sm:gap-5 sm:px-6">
@@ -132,6 +139,21 @@ function Header() {
         </nav>
         <div className="ml-auto flex items-center gap-1.5 sm:gap-2">
           <ConnectionStatus />
+          <button
+            id="wallet-toggle"
+            type="button"
+            onClick={() => (onWalletPage ? undefined : setWalletOpen((v) => !v))}
+            aria-pressed={walletOpen || onWalletPage}
+            aria-haspopup="dialog"
+            className={clsx(
+              'inline-flex h-8 items-center gap-2 rounded-full px-3 text-xs font-semibold transition-shadow',
+              walletOpen || onWalletPage ? 'btn-primary' : 'btn-outline',
+            )}
+            title="Fund this wallet from your own Zcash wallet, or withdraw"
+          >
+            <Wallet className="size-4" aria-hidden />
+            <span className="hidden sm:inline">Wallet</span>
+          </button>
           <button
             id="inspector-toggle"
             type="button"
