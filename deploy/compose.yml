@@ -1,0 +1,144 @@
+# Silicr hosted testnet demo. Compose project `silicr`; every port is published on 127.0.0.1 only
+# and fronted by nginx (deploy/nginx-silicr.conf). Images are built by deploy.sh with the classic
+# builder (the VPS has no buildx), so compose never builds.
+#   docker compose -p silicr -f compose.yml up -d
+name: silicr
+
+x-hardening: &hardening
+  image: silicr-node:latest
+  pull_policy: never
+  restart: unless-stopped
+  init: false            # tini is the image entrypoint
+  read_only: true
+  cap_drop: [ALL]
+  security_opt: [no-new-privileges:true]
+  tmpfs:
+    - /tmp:size=256m,mode=1777
+  logging:
+    driver: json-file
+    options: { max-size: 10m, max-file: "3" }
+  networks: [silicr]
+
+services:
+  relay:
+    <<: *hardening
+    command: ["sh", "-c", "exec $$TSX packages/relay/src/main.ts --host 0.0.0.0 --port 8700 --data /data/relay --observer --ttl-hours 24"]
+    ports: ["127.0.0.1:8700:8700"]
+    volumes:
+      - /opt/silicr/data/relay:/data/relay
+    deploy:
+      resources:
+        limits: { cpus: "0.5", memory: 512M, pids: 128 }
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8700/health').then(r=>process.exit(r.ok?0:1),()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+
+  # The process runner executes jobs inside this container: the container is the sandbox
+  # (read-only root, no capabilities, no-new-privileges, tmpfs /tmp, pid/CPU/memory limits,
+  # its own wallet mount only, no Docker socket).
+  provider:
+    <<: *hardening
+    command:
+      - node
+      - deploy/fwd.mjs
+      - "8702"
+      - "7702"
+      - --
+      - packages/cli/node_modules/.bin/tsx
+      - packages/cli/src/main.ts
+      - daemon
+      - --data
+      - /data/wallets/test-provider
+      - --role
+      - provider
+      - --network
+      - test
+      - --port
+      - "7702"
+      - --relay
+      - http://relay:8700
+      - --runner
+      - process
+      - --public-origin
+      - https://app.silicr.38-49-213-208.sslip.io
+      - --trust-proxy
+      - --public-demo
+    ports: ["127.0.0.1:8702:8702"]
+    volumes:
+      - /opt/silicr/data/wallets/test-provider:/data/wallets/test-provider
+    depends_on:
+      relay: { condition: service_healthy }
+    deploy:
+      resources:
+        limits: { cpus: "1.0", memory: 1G, pids: 256 }
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8702/api/status').then(r=>process.exit(r.ok?0:1),()=>process.exit(1))"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 120s
+
+  buyer:
+    <<: *hardening
+    command:
+      - node
+      - deploy/fwd.mjs
+      - "8701"
+      - "7701"
+      - --
+      - packages/cli/node_modules/.bin/tsx
+      - packages/cli/src/main.ts
+      - daemon
+      - --data
+      - /data/wallets/test-buyer
+      - --role
+      - buyer
+      - --network
+      - test
+      - --port
+      - "7701"
+      - --relay
+      - http://relay:8700
+      - --public-origin
+      - https://app.silicr.38-49-213-208.sslip.io
+      - --trust-proxy
+      - --public-demo
+    ports: ["127.0.0.1:8701:8701"]
+    volumes:
+      - /opt/silicr/data/wallets/test-buyer:/data/wallets/test-buyer
+    depends_on:
+      relay: { condition: service_healthy }
+    deploy:
+      resources:
+        limits: { cpus: "1.0", memory: 1G, pids: 256 }
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8701/api/status').then(r=>process.exit(r.ok?0:1),()=>process.exit(1))"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 120s
+
+  web:
+    <<: *hardening
+    working_dir: /app/apps/web
+    command: ["node_modules/.bin/next", "start", "-H", "0.0.0.0", "-p", "8703"]
+    ports: ["127.0.0.1:8703:8703"]
+    tmpfs:
+      - /tmp:size=128m,mode=1777
+      - /app/apps/web/.next/cache:size=128m,mode=1777
+    deploy:
+      resources:
+        limits: { cpus: "0.5", memory: 512M, pids: 128 }
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8703/').then(r=>process.exit(r.ok?0:1),()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+
+networks:
+  silicr:
+    name: silicr

@@ -1,0 +1,15 @@
+# Copied to the build context root as .dockerignore by deploy.sh (the classic builder only reads it there).
+**/node_modules
+**/.next
+**/.next-*
+**/out
+**/target
+.silicr
+**/wallets
+**/*.seed
+**/*.key
+.git
+.env*
+**/*.log
+**/.DS_Store
+**/tsconfig.tsbuildinfo

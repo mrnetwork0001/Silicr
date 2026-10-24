@@ -1,0 +1,87 @@
+# One image for relay, buyer/provider daemons and the web terminal (next start).
+# Context: the repo root (deploy.sh rsyncs it without node_modules, .next*, target, .silicr).
+# Classic builder (the VPS has no buildx):
+#   docker build -f deploy/Dockerfile.sidecar -t silicr-sidecar:latest .
+#   docker build -f deploy/Dockerfile.node --build-arg PUBLIC_HOST=... -t silicr-node:latest .
+# Targets: `runtime` (default, last) and `landing` (static export in /out).
+ARG NODE_IMAGE=node:22-bookworm-slim
+
+# ---------- full install + builds ----------
+FROM ${NODE_IMAGE} AS build
+ENV PNPM_HOME=/pnpm PATH=/pnpm:$PATH CI=1 NEXT_TELEMETRY_DISABLED=1
+RUN corepack enable && corepack prepare pnpm@9.15.9 --activate
+WORKDIR /app
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml tsconfig.base.json ./
+COPY packages/api/package.json packages/api/
+COPY packages/cli/package.json packages/cli/
+COPY packages/engine/package.json packages/engine/
+COPY packages/mcp/package.json packages/mcp/
+COPY packages/protocol/package.json packages/protocol/
+COPY packages/relay/package.json packages/relay/
+COPY packages/runner/package.json packages/runner/
+COPY packages/zec/package.json packages/zec/
+COPY apps/web/package.json apps/web/
+COPY apps/landing/package.json apps/landing/
+RUN pnpm install --frozen-lockfile
+COPY . .
+
+# Public URLs are inlined into the browser bundles at build time.
+ARG APP_ORIGIN=https://app.silicr.38-49-213-208.sslip.io
+ARG LANDING_ORIGIN=https://silicr.38-49-213-208.sslip.io
+ENV NEXT_PUBLIC_BUYER_URL=${APP_ORIGIN}/buyer \
+    NEXT_PUBLIC_PROVIDER_URL=${APP_ORIGIN}/provider \
+    NEXT_PUBLIC_RELAY_URL=${APP_ORIGIN}/relay \
+    NEXT_PUBLIC_LANDING_URL=${LANDING_ORIGIN} \
+    NEXT_PUBLIC_APP_URL=${APP_ORIGIN} \
+    NEXT_PUBLIC_SITE_URL=${LANDING_ORIGIN}
+RUN pnpm --filter @silicr/web build
+RUN pnpm --filter @silicr/landing build && test -f apps/landing/out/index.html
+
+# ---------- landing static files only ----------
+FROM busybox:1.36 AS landing
+COPY --from=build /app/apps/landing/out /out
+
+# ---------- production install ----------
+FROM ${NODE_IMAGE} AS prod-deps
+ENV PNPM_HOME=/pnpm PATH=/pnpm:$PATH CI=1
+RUN corepack enable && corepack prepare pnpm@9.15.9 --activate
+WORKDIR /app
+COPY --from=build /app/package.json /app/pnpm-lock.yaml /app/pnpm-workspace.yaml ./
+COPY --from=build /app/packages/api/package.json packages/api/
+COPY --from=build /app/packages/cli/package.json packages/cli/
+COPY --from=build /app/packages/engine/package.json packages/engine/
+COPY --from=build /app/packages/mcp/package.json packages/mcp/
+COPY --from=build /app/packages/protocol/package.json packages/protocol/
+COPY --from=build /app/packages/relay/package.json packages/relay/
+COPY --from=build /app/packages/runner/package.json packages/runner/
+COPY --from=build /app/packages/zec/package.json packages/zec/
+COPY --from=build /app/apps/web/package.json apps/web/
+COPY --from=build /app/apps/landing/package.json apps/landing/
+# Production deps only; tsx comes in as a dependency of @silicr/cli.
+RUN pnpm install --frozen-lockfile --prod --filter '!@silicr/landing'
+
+# ---------- runtime ----------
+FROM ${NODE_IMAGE} AS runtime
+# python3 runs example jobs under the process runner; tini is PID 1.
+RUN apt-get update && apt-get install -y --no-install-recommends python3 tini ca-certificates \
+ && rm -rf /var/lib/apt/lists/*
+ENV NODE_ENV=production NEXT_TELEMETRY_DISABLED=1 HOME=/tmp \
+    SILICR_ZEC_SIDECAR=/usr/local/bin/zec-sidecar \
+    TSX=/app/packages/cli/node_modules/.bin/tsx
+WORKDIR /app
+COPY --from=prod-deps /app ./
+COPY --from=build /app/packages ./packages-src
+RUN for d in packages-src/*; do n=$(basename $d); cp -a $d/src $d/package.json $d/tsconfig.json packages/$n/; \
+      [ -d $d/bin ] && cp -a $d/bin packages/$n/ || true; done && rm -rf packages-src
+COPY --from=build /app/tsconfig.base.json ./
+COPY --from=build /app/examples ./examples
+COPY --from=build /app/apps/web/package.json /app/apps/web/next.config.ts ./apps/web/
+COPY --from=build /app/apps/web/.next ./apps/web/.next
+RUN rm -rf apps/web/.next/cache
+COPY --from=silicr-sidecar:latest /usr/local/bin/zec-sidecar /usr/local/bin/zec-sidecar
+COPY deploy/fwd.mjs /app/deploy/fwd.mjs
+RUN mkdir -p /data && chown node:node /data
+USER node
+VOLUME ["/data"]
+ENTRYPOINT ["/usr/bin/tini", "--"]
+CMD ["node", "-e", "console.log('pick a command in compose.yml')"]

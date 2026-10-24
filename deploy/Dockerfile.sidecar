@@ -1,0 +1,19 @@
+# zec-sidecar (librustzcash light wallet), release build for linux/amd64.
+# Context: the repo root. Built with the classic builder (no BuildKit features).
+#   docker build -f deploy/Dockerfile.sidecar -t silicr-sidecar:latest .
+FROM rust:1-bookworm AS build
+WORKDIR /src/zec-sidecar
+# Dependencies first, so source edits don't rebuild the whole librustzcash tree.
+COPY zec-sidecar/Cargo.toml zec-sidecar/Cargo.lock ./
+RUN mkdir src && echo 'fn main() {}' > src/main.rs \
+ && cargo build --release --locked \
+ && rm -rf src target/release/zec-sidecar target/release/deps/zec_sidecar-* target/release/.fingerprint/zec-sidecar-*
+COPY zec-sidecar/src ./src
+COPY zec-sidecar/testdata ./testdata
+RUN cargo build --release --locked && strip --strip-debug target/release/zec-sidecar \
+ && ./target/release/zec-sidecar --help > /dev/null
+
+# A tiny image that only carries the binary; Dockerfile.node copies it from here.
+FROM debian:bookworm-slim
+COPY --from=build /src/zec-sidecar/target/release/zec-sidecar /usr/local/bin/zec-sidecar
+ENTRYPOINT ["/usr/local/bin/zec-sidecar"]
