@@ -63,7 +63,7 @@ function refuse(message: string, data?: Data): CallToolResult {
 function explain(e: unknown): string {
   if (e instanceof ApiError) {
     if (e.code === 'unreachable' || e.code === 'timeout') {
-      return `${e.message}. Start the local stack with \`silicr demo\` (simulated chain) or a buyer daemon with \`silicr daemon --role buyer --data <dir>\`, then retry.`;
+      return `${e.message}. Start the testnet stack with \`silicr demo\` or a buyer daemon with \`silicr daemon --role buyer --data <dir>\`, then retry.`;
     }
     return `${e.message} (daemon error code: ${e.code})`;
   }
@@ -189,14 +189,14 @@ function limitText(l: Limits, sessionMaxZats: bigint): string {
 
 /** The billing interval providers on this network bid, guessed from the block time (a bid sets the real one). */
 function guessIntervalS(blockTimeS: number): number {
-  if (blockTimeS >= 60) return 300;
+  if (blockTimeS >= 20) return 300; // Zcash testnet (25 s blocks since NU7) and mainnet
   if (blockTimeS >= 1) return 4;
   if (blockTimeS >= 0.25) return 2;
   return 1;
 }
 
 function guessLeadS(blockTimeS: number, intervalS: number): number {
-  const lead = blockTimeS >= 60 ? 60 : blockTimeS >= 1 ? 1 : blockTimeS >= 0.25 ? 0.5 : 0.25;
+  const lead = blockTimeS >= 20 ? 60 : blockTimeS >= 1 ? 1 : blockTimeS >= 0.25 ? 0.5 : 0.25;
   return Math.min(lead, intervalS / 4);
 }
 
@@ -773,7 +773,7 @@ export function registerTools(server: McpServer, ctx: ToolContext): void {
     {
       title: 'Silicr status',
       description:
-        'Health of the local Silicr buyer daemon and of this session: role, network (simulated chain, Zcash testnet or Zcash mainnet), chain height, shielded balance in ZEC, demo mode, the session spending cap (max, committed, remaining), the daemon\'s own cap if it has one, and whether a provider daemon is reachable. Call it first. Read-only.',
+        'Health of the local Silicr buyer daemon and of this session: role, network (Zcash testnet or Zcash mainnet), chain height, shielded balance in ZEC, demo mode, the session spending cap (max, committed, remaining), the daemon\'s own cap if it has one, and whether a provider daemon is reachable. Call it first. Read-only.',
       inputSchema: {},
       annotations: ro,
     },
