@@ -51,7 +51,7 @@ async function silicr(...args: string[]): Promise<string> {
 describe('silicr CLI', () => {
   it('has every command', () => {
     const names = buildProgram().commands.map((c) => c.name());
-    for (const n of ['demo', 'init', 'daemon', 'relay', 'run', 'provide', 'status', 'rfqs', 'jobs', 'bids', 'accept', 'stop', 'result', 'fault', 'migrate']) {
+    for (const n of ['demo', 'init', 'daemon', 'relay', 'run', 'provide', 'status', 'rfqs', 'jobs', 'bids', 'accept', 'stop', 'result', 'fault', 'migrate', 'wallet', 'withdraw']) {
       expect(names).toContain(n);
     }
   });
@@ -188,5 +188,24 @@ describe('silicr CLI', () => {
     } finally {
       exit.mockRestore();
     }
+  });
+});
+
+describe('silicr wallet / withdraw', () => {
+  it('wallet prints the deposit address, the ZIP 321 URI and a QR; withdraw sends to an Orchard address', async () => {
+    const url = stack.providerDaemon!.url;
+    const text = await silicr('wallet', '--daemon', url, '--amount', '0.05');
+    const addr = (await stack.provider!.status()).address;
+    expect(text).toContain(addr);
+    expect(text).toContain(`zcash:${addr}?amount=0.05`);
+    expect(text).toMatch(/[█▀▄]/); // the QR
+    expect(text).toMatch(/spendable after 1 confirmation/);
+    expect(text).toMatch(/memory: SIMULATED chain/);
+
+    const dest = await stack.network.wallet('cli-dest').address();
+    const sent = await silicr('withdraw', dest, '0.01', '--daemon', url);
+    expect(sent).toMatch(/sent\s+0\.01 ZEC/);
+    expect(sent).toMatch(/txid\s+[0-9a-f]{64}/);
+    await expect(silicr('withdraw', 'tmBsTi2xWTjUdEXnuTceL7fecEQKeWaPDJd', '0.01', '--daemon', url)).rejects.toThrow(/Refusing transparent address/);
   });
 });

@@ -9,6 +9,7 @@ import { status } from './commands/status.ts';
 import { audit } from './commands/audit.ts';
 import { mcp } from './commands/mcp.ts';
 import { exportViewingKey, watch } from './commands/keys.ts';
+import { wallet, withdraw } from './commands/wallet.ts';
 
 const collect = (v: string, prev: string[] = []) => [...prev, v];
 
@@ -117,6 +118,24 @@ export function buildProgram(): Command {
 
   program.command('status').description('show the local daemons').option('--buyer <url>').option('--provider <url>').action((o) => status(o));
   program.command('audit').description('privacy receipt for one request: self-contained HTML (buyer /api/leaks, in demo mode also the provider and the relay observer, plus public tx views)').argument('<rfqId>', 'id or unique prefix').option('--out <file>', 'write the HTML here (default silicr-receipt-<id>.html)').option('--json', 'print the receipt data as JSON instead').option('--buyer <url>').option('--provider <url>').option('--relay <url>', 'relay URL (default: the one the buyer daemon reports)').action((id: string, o) => audit(id, o));
+  program
+    .command('wallet')
+    .description('fund this wallet from your own Zcash wallet: address, ZIP 321 QR, balance and confirmations')
+    .option('--data <dir>', 'data dir from `silicr init` (its daemon port; default: the buyer daemon)')
+    .option('--daemon <url>', 'daemon URL (default http://127.0.0.1:7701)')
+    .option('--amount <zec>', 'put this amount in the ZIP 321 URI and QR')
+    .option('--no-qr', 'skip the QR code')
+    .action((o) => wallet(o));
+  program
+    .command('withdraw')
+    .description('move funds back to your own shielded wallet (Orchard-receiver UA only); not counted against the spend cap')
+    .argument('<to>', 'unified address with an Orchard receiver (u1… on mainnet, utest1… on testnet)')
+    .argument('<amount>', 'amount in ZEC (e.g. 0.01), or "all" for the spendable balance minus the fee')
+    .option('--yes', 'mainnet: send without the interactive go-ahead (needed when there is no terminal)')
+    .option('--force', 'withdraw even while a request or job is live')
+    .option('--data <dir>', 'data dir from `silicr init` (its daemon port; default: the buyer daemon)')
+    .option('--daemon <url>', 'daemon URL (default http://127.0.0.1:7701)')
+    .action((to: string, amount: string, o) => withdraw(to, amount, o));
   program.command('rfqs').description('list this buyer\'s RFQs').option('--daemon <url>').action((o) => rfqs(o));
   program.command('jobs').description('list this provider\'s jobs').option('--follow').option('--daemon <url>').action((o) => jobs(o));
   program.command('bids').description('show the bids on an RFQ').argument('<rfqId>', 'id or unique prefix').option('--daemon <url>').action((id: string, o) => bids(id, o));
