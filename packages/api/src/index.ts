@@ -41,6 +41,8 @@
  * 'rfq.updated' (buyer) or 'job.updated' (provider) events.
  * Leak observation ids are "<party>-<n>", e.g. "buyer-12"; `after=` accepts "buyer-12" or "12".
  * Requests with a foreign Origin or a non-loopback Host header get 403; POST/PUT bodies must be JSON (else 415).
+ * A daemon started with --public-origin <url> also accepts that Origin and its host name (hosted demo
+ * behind a reverse proxy, base URL may carry a path prefix such as https://host/buyer).
  */
 
 /** Demo fault injection on the buyer: deliberately stop (or resume) interval payments. */
@@ -63,6 +65,7 @@ export interface ErrorDto {
    * 'conflict', 'forbidden', 'method_not_allowed', 'unsupported', 'internal', 'spend_cap' (request exceeds the daemon's cap)
    * or 'blob_too_large' (memo transport: the sealed job, result or log batch exceeds what memos carry; use the relay).
    * Wallet: 'confirm_required' (409, WithdrawConfirmDto: mainnet withdraw, echo the token) and 'busy' (409: a job is live).
+   * Public demo: 'demo_disabled' (403), 'busy' (409: another request is live), 'rate_limited' (429).
    */
   code: string;
 }
@@ -101,7 +104,34 @@ export interface StatusDto {
    * in the other mode does not bid. Absent on older daemons = 'relay'.
    */
   blobTransport?: 'relay' | 'memo';
+  /**
+   * Public testnet demo (`silicr daemon --public-demo`, buyer): a shared wallet with testnet coins
+   * only. POST /api/rfqs then takes `job: { preset }` (PresetRfqRequest) instead of a folder,
+   * command and env; withdraw, policy changes, migration and provider stops are refused (403
+   * `demo_disabled`); one live request at a time (409 `busy`) and a per-IP rate limit (429
+   * `rate_limited`). Absent = false.
+   */
+  publicDemo?: boolean;
+  /** Public demo only: the server-side example jobs a request may run. */
+  presets?: JobPresetDto[];
+  /** Public demo only: the limits the daemon enforces on POST /api/rfqs. */
+  publicDemoLimits?: { maxDurationS: number; maxCount: number; maxActive: number; perIpPerHour: number };
 }
+
+/** A server-side example job offered by a public-demo daemon. */
+export interface JobPresetDto {
+  id: string;
+  title: string;
+  description: string;
+  /** What runs, for display (the daemon decides; clients cannot change it). */
+  command: string[];
+  /** Suggested request defaults for the form. */
+  gpu: string;
+  durationS: number;
+}
+
+/** POST /api/rfqs on a public-demo daemon: the job is a preset id, everything else as NewRfqRequest. */
+export type PresetRfqRequest = Omit<NewRfqRequest, 'job'> & { job: { preset: string } };
 
 export interface GpuSpec {
   model: string;
