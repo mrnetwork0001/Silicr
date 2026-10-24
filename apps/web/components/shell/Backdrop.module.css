@@ -1,0 +1,90 @@
+/* Terminal backdrop: fixed under everything and dimmer than the landing page's. */
+
+.root {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  overflow: hidden;
+  contain: strict;
+}
+
+.dots {
+  position: absolute;
+  inset: 0;
+  background-image: radial-gradient(circle at 1px 1px, rgba(255, 190, 140, 0.055) 1px, transparent 0);
+  background-size: 24px 24px;
+  mask-image: radial-gradient(ellipse 85% 75% at 50% 40%, #000 25%, rgba(0, 0, 0, 0.3) 100%);
+}
+
+.traces {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  /* Visible at the edges, nearly gone behind the content column. */
+  mask-image: linear-gradient(90deg, #000 0%, rgba(0, 0, 0, 0.35) 18%, rgba(0, 0, 0, 0.12) 35%, rgba(0, 0, 0, 0.12) 65%, rgba(0, 0, 0, 0.35) 82%, #000 100%);
+}
+
+.pulse {
+  stroke: #f7a35c;
+  stroke-width: 1.6;
+  stroke-dasharray: 40 960;
+  stroke-dashoffset: 1000;
+  opacity: 0.45;
+  animation: flow linear infinite;
+}
+@keyframes flow {
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
+.glow {
+  position: absolute;
+  border-radius: 50%;
+  background: radial-gradient(closest-side, rgba(238, 127, 32, 0.1), rgba(122, 52, 16, 0.04) 55%, transparent);
+  will-change: transform;
+}
+.g1 {
+  width: 900px;
+  height: 640px;
+  left: -300px;
+  top: -6%;
+  opacity: 0.8;
+  animation: drift1 44s ease-in-out infinite alternate;
+}
+.g2 {
+  width: 1000px;
+  height: 720px;
+  right: -360px;
+  bottom: -18%;
+  opacity: 0.7;
+  animation: drift2 52s ease-in-out infinite alternate;
+}
+@keyframes drift1 {
+  to {
+    transform: translate3d(140px, 90px, 0) scale(1.08);
+  }
+}
+@keyframes drift2 {
+  to {
+    transform: translate3d(-160px, -80px, 0) scale(0.94);
+  }
+}
+
+.vignette {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(180deg, rgba(0, 0, 0, 0.5), transparent 16%, transparent 84%, rgba(0, 0, 0, 0.55));
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pulse {
+    animation: none;
+    opacity: 0;
+  }
+  .glow {
+    animation: none;
+  }
+}

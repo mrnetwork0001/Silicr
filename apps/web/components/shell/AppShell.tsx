@@ -1,0 +1,156 @@
+'use client';
+
+import clsx from 'clsx';
+import { ScanEye } from '@/components/icons';
+import Link from 'next/link';
+import { usePathname } from 'next/navigation';
+import { useEffect, useLayoutEffect, useRef, type ReactNode } from 'react';
+import { boot } from '@/lib/driver';
+import { isTypingTarget } from '@/lib/hooks';
+import { actions, getState, useSilicr } from '@/lib/store';
+import { LeakInspector } from '../inspector/LeakInspector';
+import { Kbd } from '../ui';
+import { ConnectionStatus } from './ConnectionStatus';
+import { LogoMark } from './Logo';
+import { config } from '@/lib/config';
+import { MockBanner } from './MockBanner';
+import { Backdrop } from './Backdrop';
+
+const NAV = [
+  { href: '/', label: 'Market' },
+  { href: '/provider', label: 'Provider' },
+] as const;
+
+const useIsoLayoutEffect = typeof window === 'undefined' ? useEffect : useLayoutEffect;
+
+const REVEAL = '.glass-panel, [data-reveal]';
+
+export function AppShell({ children }: { children: ReactNode }) {
+  const mode = useSilicr((s) => s.mode);
+  const chromeRef = useRef<HTMLDivElement>(null);
+  const mainRef = useRef<HTMLElement>(null);
+  const pathname = usePathname();
+
+  // Panels fade-rise in on first load and on every route change, staggered. Opacity and transform only.
+  useEffect(() => {
+    const main = mainRef.current;
+    if (!main || typeof main.animate !== 'function') return;
+    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+    const raf = requestAnimationFrame(() => {
+      const els = [...main.querySelectorAll<HTMLElement>(REVEAL)].filter((el) => {
+        const outer = el.parentElement?.closest(REVEAL);
+        return !outer || !main.contains(outer);
+      });
+      els.slice(0, 14).forEach((el, i) => {
+        el.animate([{ opacity: 0, transform: 'translateY(8px)' }, { opacity: 1, transform: 'none' }], {
+          duration: 420,
+          delay: i * 60,
+          easing: 'cubic-bezier(0.2, 0.7, 0.2, 1)',
+          fill: 'backwards',
+        });
+      });
+    });
+    return () => cancelAnimationFrame(raf);
+  }, [pathname]);
+
+  useEffect(() => {
+    void boot();
+  }, []);
+
+  // Global shortcuts: L toggles the Leak Inspector, Esc closes it.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.defaultPrevented || e.metaKey || e.ctrlKey || e.altKey) return;
+      if (isTypingTarget(e.target)) return;
+      if (e.key === 'l' || e.key === 'L') {
+        e.preventDefault();
+        actions.toggleInspector();
+      } else if (e.key === 'Escape' && getState().inspector.open) {
+        actions.setInspector({ open: false });
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
+
+  // Expose the sticky chrome height so the inspector overlay sits below it (the mock banner stays visible).
+  useIsoLayoutEffect(() => {
+    const el = chromeRef.current;
+    if (!el) return;
+    const set = () => document.documentElement.style.setProperty('--chrome-h', `${el.offsetHeight}px`);
+    set();
+    const ro = new ResizeObserver(set);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+
+  return (
+    <>
+      <Backdrop />
+      <div ref={chromeRef} className="sticky top-0 z-40">
+        {mode === 'mock' && <MockBanner />}
+        <Header />
+      </div>
+      <main ref={mainRef} className="corona relative z-[1] mx-auto w-full max-w-[1600px] px-4 pb-16 pt-5 sm:px-6">{children}</main>
+      <LeakInspector />
+    </>
+  );
+}
+
+function Header() {
+  const pathname = usePathname();
+  const open = useSilicr((s) => s.inspector.open);
+  return (
+    <header className="border-b border-line bg-black/80 backdrop-blur-md">
+      <div className="mx-auto flex h-14 max-w-[1600px] items-center gap-2 px-4 sm:gap-5 sm:px-6">
+        <a
+          href={config.landingUrl || '/'}
+          className="flex shrink-0 items-center gap-2 rounded-md text-fg"
+          aria-label="Silicr home"
+          title={config.landingUrl ? 'Back to the Silicr site' : undefined}
+        >
+          <LogoMark className="size-[22px] text-white" />
+          <span className="hidden text-[18px] font-bold tracking-[-0.02em] text-white sm:inline">Silicr</span>
+        </a>
+        <nav className="flex items-center gap-0.5" aria-label="Main">
+          {NAV.map((n) => {
+            const active = n.href === '/' ? pathname === '/' || pathname.startsWith('/rfq') : pathname.startsWith(n.href);
+            return (
+              <Link
+                key={n.href}
+                href={n.href}
+                aria-current={active ? 'page' : undefined}
+                className={clsx(
+                  'rounded-full px-3 py-1.5 text-sm font-semibold transition-colors',
+                  active ? 'glass-pill text-white' : 'text-secondary hover:text-white',
+                )}
+              >
+                {n.label}
+              </Link>
+            );
+          })}
+        </nav>
+        <div className="ml-auto flex items-center gap-1.5 sm:gap-2">
+          <ConnectionStatus />
+          <button
+            id="inspector-toggle"
+            type="button"
+            onClick={() => actions.toggleInspector()}
+            aria-pressed={open}
+            aria-keyshortcuts="L"
+            className={clsx(
+              'inline-flex h-8 items-center gap-2 rounded-full px-3 text-xs font-semibold transition-shadow',
+              open ? 'btn-primary' : 'btn-outline',
+            )}
+          >
+            <ScanEye className="size-4" aria-hidden />
+            <span className="hidden sm:inline">Leak Inspector</span>
+            <span className="hidden sm:inline-flex">
+              <Kbd inverted={open}>L</Kbd>
+            </span>
+          </button>
+        </div>
+      </div>
+    </header>
+  );
+}
