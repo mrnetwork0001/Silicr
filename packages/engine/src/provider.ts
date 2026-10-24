@@ -9,6 +9,7 @@ import { NodeBase, type NodeOptions } from './base.ts';
 import { GPU_SLUG } from './buyer.ts';
 import { NoteWatcher, type NoteEvent, describeError } from './chain.ts';
 import { aliasFor } from './alias.ts';
+import { profileAtHeight } from './profile.ts';
 import { badRequest, conflict, notFound } from './errors.ts';
 import { decodeJobBlob, encodeCheckpointBlob, sanitizeEnv } from './jobblob.ts';
 import { encodeLogBatch, readChunked, uploadChunked } from './blobs.ts';
@@ -611,7 +612,7 @@ export class ProviderNode extends NodeBase {
     const maxIntervals = Math.max(1, Math.ceil(job.rfq.durationS / job.bid.intervalS));
     if (!Number.isInteger(acc.intervals) || acc.intervals < 1 || acc.intervals > maxIntervals) return reject('bad interval count');
     const h = e.note.height ?? this.lastTip;
-    if (h > job.rfq.expiresHeight + this.profile.acceptWindowBlocks) return reject('arrived after we gave up');
+    if (h > job.rfq.expiresHeight + profileAtHeight(this.profile, job.rfq.expiresHeight).acceptWindowBlocks) return reject('arrived after we gave up');
     job.state = 'won';
     job.intervals = acc.intervals;
     job.payments.push({ seq: 0, kind: 'accept', zats: e.note.zats, txid: e.note.txid, height: e.note.height, at: Date.now() });
@@ -678,7 +679,7 @@ export class ProviderNode extends NodeBase {
   private onTick(tip: number): void {
     this.lastTip = tip;
     for (const j of this.jobs.values()) {
-      if (j.state === 'bid' && tip > j.rfq.expiresHeight + this.profile.acceptWindowBlocks) {
+      if (j.state === 'bid' && tip > j.rfq.expiresHeight + profileAtHeight(this.profile, j.rfq.expiresHeight).acceptWindowBlocks) {
         j.state = 'lost';
         this.changed(j);
       }

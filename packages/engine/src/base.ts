@@ -7,7 +7,7 @@ import { resolveDeps, type EngineDeps } from './deps.ts';
 import { chainFields, FACTS_BY_LABEL, LeakRecorder, publicTxViewDto, field, type TxFacts } from './leaks.ts';
 import { DirectoryClient } from './directory.ts';
 import { TxSender, isInsufficientFunds, type NoteEvent, type NoteWatcher } from './chain.ts';
-import { defaultProfile, type TimingProfile } from './profile.ts';
+import { defaultProfile, profileAtHeight, type TimingProfile } from './profile.ts';
 import { EngineError } from './errors.ts';
 import { Emitter, errMsg, hex, randomBytes } from './util.ts';
 import { formatZec, parseZats, parseZec } from './zats.ts';
@@ -302,7 +302,7 @@ export abstract class NodeBase {
       relayUrl: this.relay.baseUrl,
       version: ENGINE_VERSION,
       demoMode: this.demoMode,
-      blockTimeS: this.profile.blockTimeS,
+      blockTimeS: profileAtHeight(this.profile, height).blockTimeS,
       blobTransport: this.blobTransport,
       ...(this.proxy ? { proxy: this.proxy } : {}),
       ...(this.spendCap

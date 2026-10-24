@@ -49,7 +49,16 @@ export interface TimingProfile {
   payLeadS: number;
   /** Buyer: a heartbeat older than this doesn't count as "provider alive" for paying. */
   payFreshS: number;
+  /**
+   * A network upgrade that changes the block time (NU7 on mainnet): from `height` on, these
+   * block-denominated values replace the ones above, keeping the same wall-clock windows.
+   * Resolve with profileAtHeight().
+   */
+  upgrade?: { name: string; height: number } & Pick<TimingProfile, 'blockTimeS' | 'bidWindowBlocks' | 'acceptWindowBlocks'>;
 }
+
+/** NU7 activation on Zcash mainnet (25 s blocks after it; testnet already runs NU7). */
+export const MAINNET_NU7_HEIGHT = 3_543_405;
 
 /** In-process simulated chain, 1 s blocks: the zero-setup demo. */
 export const MEMORY_PROFILE: TimingProfile = {
@@ -99,14 +108,19 @@ export const FAST_PROFILE: TimingProfile = {
   payFreshS: 1,
 };
 
-/** Zcash testnet: ~75 s blocks. PAY and ACCEPT are acted on from the mempool where the backend allows. */
+/**
+ * Zcash testnet: 25 s blocks since NU7 (75 s before). PAY and ACCEPT are acted on from the mempool
+ * where the backend allows. The block windows are the pre-NU7 wall-clock windows in 25 s blocks:
+ * bid window 12 blocks (~5 min), accept window 60 blocks (~25 min). Change is spendable after 3
+ * confirmations (~75 s), received funds after 10 (~4 min).
+ */
 export const TESTNET_PROFILE: TimingProfile = {
   name: 'testnet',
-  blockTimeS: 75,
+  blockTimeS: 25,
   pollMs: 5000,
-  bidWindowBlocks: 4,
-  // Testnet blocks are bursty (~14 s on average lately): leave a human time to accept.
-  acceptWindowBlocks: 20,
+  bidWindowBlocks: 12,
+  // After the bid window: ~25 min for a human to accept a bid.
+  acceptWindowBlocks: 60,
   intervalS: 300,
   heartbeatS: 15,
   heartbeatTimeoutS: 90,
@@ -158,7 +172,16 @@ export const MAINNET_PROFILE: TimingProfile = {
   prepareTimeoutS: 1800,
   payLeadS: 120, // of a 600 s interval: I/5, under the I/4 clamp
   payFreshS: 45,
+  // NU7 (≈ 2026-11-03): 25 s blocks, so three times the blocks for the same ~10 min / ~25 min windows.
+  upgrade: { name: 'nu7', height: MAINNET_NU7_HEIGHT, blockTimeS: 25, bidWindowBlocks: 24, acceptWindowBlocks: 60 },
 };
+
+/** The profile in force at a block height: applies `upgrade` once the height reaches it. */
+export function profileAtHeight(p: TimingProfile, height: number): TimingProfile {
+  const u = p.upgrade;
+  if (!u || !(height >= u.height)) return p;
+  return { ...p, blockTimeS: u.blockTimeS, bidWindowBlocks: u.bidWindowBlocks, acceptWindowBlocks: u.acceptWindowBlocks };
+}
 
 export const PROFILES: Record<string, TimingProfile> = {
   memory: MEMORY_PROFILE,

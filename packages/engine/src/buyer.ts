@@ -26,7 +26,7 @@ import { ChunkAssembler, MAX_PAYLOAD_BYTES, decodeLogBatch, readChunked, uploadC
 import { TX_FACTS, cipherPreview } from './leaks.ts';
 import { formatZec, parseZats, perHour, perInterval, withinHourly } from './zats.ts';
 import { StateFile, bytesEqual, errMsg, hex, randomInt, readIfExists, shortHex, shuffle, sleep, unhex, writePrivate, randomBytes } from './util.ts';
-import { maxExposureIntervals, payLeadFor } from './profile.ts';
+import { maxExposureIntervals, payLeadFor, profileAtHeight } from './profile.ts';
 
 const MAX_BUNDLE_BYTES = MAX_PAYLOAD_BYTES - 64 * 1024;
 /** Same rule as the memo protocol's GPU field. */
@@ -514,7 +514,7 @@ export class BuyerNode extends NodeBase {
       rfqTxids: [],
       replyTo,
       sentHeight: tip,
-      expiresHeight: tip + this.profile.bidWindowBlocks,
+      expiresHeight: tip + profileAtHeight(this.profile, tip).bidWindowBlocks,
       bids: [],
       rejectedBids: 0,
       payments: [],
@@ -543,7 +543,7 @@ export class BuyerNode extends NodeBase {
       const keys = this.runtime(r).keys;
       const tip = await this.backend.height();
       r.sentHeight = tip;
-      r.expiresHeight = tip + this.profile.bidWindowBlocks;
+      r.expiresHeight = tip + profileAtHeight(this.profile, tip).bidWindowBlocks;
       const msg: Rfq = {
         t: 'RFQ',
         rfqId: unhex(r.rfqId),
@@ -797,7 +797,7 @@ export class BuyerNode extends NodeBase {
           r.state = 'expired';
           r.error = 'no acceptable bids before expiry';
           this.changed(r);
-        } else if (tip > r.expiresHeight + this.profile.acceptWindowBlocks) {
+        } else if (tip > r.expiresHeight + profileAtHeight(this.profile, r.expiresHeight).acceptWindowBlocks) {
           r.state = 'expired';
           r.error = 'bids were not accepted in time';
           this.changed(r);
@@ -886,7 +886,7 @@ export class BuyerNode extends NodeBase {
     const rt = this.runtime(r);
     if (r.state !== 'collecting') throw conflict(`RFQ is ${r.state}; only a collecting RFQ can be accepted`);
     if (rt.accepting) throw conflict('an accept is already in progress');
-    if (this.lastTip > r.expiresHeight + this.profile.acceptWindowBlocks) throw conflict('too late: providers have given up on this RFQ');
+    if (this.lastTip > r.expiresHeight + profileAtHeight(this.profile, r.expiresHeight).acceptWindowBlocks) throw conflict('too late: providers have given up on this RFQ');
     const pid = String(providerId).toLowerCase();
     const candidates = r.bids.filter((b) => b.providerId === pid);
     if (candidates.length === 0) throw notFound(`no valid bid from provider ${shortHex(pid)}`);
