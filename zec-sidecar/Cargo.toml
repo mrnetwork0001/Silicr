@@ -31,13 +31,25 @@ tower-service = "0.3"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
 
-# Zcash (no transparent-inputs, no pczt, no tor: this wallet never touches transparent funds)
+# FROST 2-of-3 bond custody (src/frost.rs). orchard 0.16 pins reddsa 0.6, which dropped the FROST
+# module, so the Zcash Foundation's reddsa 0.5.2 (`frost::redpallas`, frost-core 3.0) is linked as a
+# second crate and bridged to orchard through byte encodings. rand_core 0.6 is what frost-core 3 takes.
+blake2b_simd = "1"
+ff = "0.14"
+frost-rerandomized = { version = "3.0.0", default-features = false, features = ["serialization"] }
+pasta_curves = "0.6"
+rand_core06 = { package = "rand_core", version = "0.6", features = ["getrandom"] }
+reddsa_frost = { package = "reddsa", version = "0.5.2", default-features = false, features = ["std", "frost"] }
+
+# Zcash. `pczt` exists for the FROST bond spend only (an external signer needs a PCZT); the wallet
+# still never touches transparent funds (the transparent-inputs feature it drags in is compiled, not used).
 orchard = { version = "0.16.0", default-features = false, features = ["circuit"] }
+pczt = { version = "0.10.0", features = ["orchard", "prover", "signer", "io-finalizer", "spend-finalizer", "tx-extractor"] }
 sapling = { package = "sapling-crypto", version = "0.9" }
 zcash_address = "0.14.0"
-zcash_client_backend = { version = "0.25.0", features = ["lightwalletd-tonic-tls-webpki-roots", "orchard"] }
-zcash_client_sqlite = { version = "0.23.0", features = ["orchard"] }
-zcash_keys = { version = "0.17.0", features = ["orchard", "sapling"] }
+zcash_client_backend = { version = "0.25.0", features = ["lightwalletd-tonic-tls-webpki-roots", "orchard", "pczt"] }
+zcash_client_sqlite = { version = "0.23.0", features = ["orchard", "serde", "transparent-inputs"] }
+zcash_keys = { version = "0.17.0", features = ["orchard", "sapling", "unstable-frost"] }
 zcash_primitives = "0.31.0"
 zcash_proofs = { version = "0.31.0", features = ["bundled-prover"] }
 zcash_protocol = "0.11.0"

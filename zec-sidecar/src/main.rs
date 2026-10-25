@@ -7,6 +7,7 @@
 //! contain seeds, keys or memo contents. Closing stdin shuts the sidecar down.
 
 mod addr;
+mod frost;
 mod inspect;
 mod keys;
 mod mempool;
@@ -15,7 +16,7 @@ mod socks;
 mod views;
 mod wallet;
 
-use std::{path::PathBuf, sync::Arc, time::Duration};
+use std::{os::unix::fs::OpenOptionsExt, path::PathBuf, sync::Arc, time::Duration};
 
 use anyhow::Context;
 use clap::{Args, Parser, Subcommand};
@@ -52,6 +53,11 @@ struct Cli {
 enum Command {
     /// Run one wallet as a JSON-lines service on stdin/stdout.
     Serve(ServeArgs),
+    /// FROST 2-of-3 bond custody: key generation, the bond's watch-only wallet, threshold spends.
+    Frost {
+        #[command(subcommand)]
+        command: FrostCommand,
+    },
     /// Print the wallet's unified full viewing key (Orchard component only) and exit. Needs no
     /// server and works while a daemon has the wallet open. The key reveals every payment this
     /// wallet ever sent or received, with amounts and memos, and links all of its addresses; it
@@ -109,6 +115,74 @@ enum Command {
         /// Also request transparent data (vin/vout) in the compact blocks.
         #[arg(long)]
         with_transparent: bool,
+    },
+}
+
+#[derive(Args, Clone)]
+struct NetArgs {
+    /// main or test. Nothing defaults to mainnet.
+    #[arg(long, default_value = "test")]
+    network: String,
+    /// lightwalletd/Zaino endpoint, host:port (default by network).
+    #[arg(long)]
+    server: Option<String>,
+    /// SOCKS5 proxy for every connection to the server.
+    #[arg(long, env = "SILICR_PROXY")]
+    proxy: Option<String>,
+}
+
+#[derive(Subcommand)]
+enum FrostCommand {
+    /// DEMO/TEST: run the three-party DKG inside one process and write share-1..3.json (private)
+    /// and group.json (public: ak, viewing key, bond address) to --out. A real deployment runs one
+    /// party per sidecar with `dkg-round1/2/3`; the key material is identical in shape.
+    DkgLocal {
+        #[command(flatten)]
+        net: NetArgs,
+        /// Directory for the share and group files (created, mode 0700).
+        #[arg(long)]
+        out: PathBuf,
+        /// Height the bond wallet starts scanning from (default: the chain tip now).
+        #[arg(long)]
+        birthday: Option<u32>,
+    },
+    /// Open (or create) the bond's watch-only wallet from group.json, sync it and print its
+    /// balance. This is what a buyer runs to verify a provider's bond: the viewing key sees the
+    /// bond's balance and history and can never spend.
+    Balance {
+        #[command(flatten)]
+        net: NetArgs,
+        /// The group file (public).
+        #[arg(long)]
+        group: PathBuf,
+        /// Watch-only wallet directory (default: <group dir>/wallet).
+        #[arg(long)]
+        wallet: Option<PathBuf>,
+    },
+    /// Spend from the bond with two (or three) shares: propose, build a PCZT, prove, sign every
+    /// bond spend with re-randomized FROST, broadcast. Prints the send report as JSON.
+    Spend {
+        #[command(flatten)]
+        net: NetArgs,
+        #[arg(long)]
+        group: PathBuf,
+        #[arg(long)]
+        wallet: Option<PathBuf>,
+        /// Share files of the signing parties (at least two).
+        #[arg(long = "share", required = true)]
+        shares: Vec<PathBuf>,
+        /// Recipient: a unified address with an Orchard receiver.
+        #[arg(long)]
+        to: String,
+        /// Amount in zatoshis.
+        #[arg(long)]
+        zats: u64,
+        /// Memo as hex (padded to 512 bytes; default: empty).
+        #[arg(long)]
+        memo_hex: Option<String>,
+        /// Confirmations before a received bond note is spendable (ZIP 315 default 10).
+        #[arg(long, default_value_t = 10)]
+        untrusted_confirmations: u32,
     },
 }
 
@@ -277,6 +351,7 @@ async fn main() {
                 }
             }
         }
+        Command::Frost { command } => one_shot(frost_command(command)).await,
         Command::Serve(args) => match serve(args).await {
             Ok(()) => 0,
             Err(e) => {
@@ -288,6 +363,139 @@ async fn main() {
         },
     };
     std::process::exit(code);
+}
+
+async fn frost_command(cmd: FrostCommand) -> anyhow::Result<Value> {
+    match cmd {
+        FrostCommand::DkgLocal { net, out, birthday } => {
+            let server = server_for(&net.network, net.server.as_deref(), net.proxy.as_deref())?;
+            let created_height = match birthday {
+                Some(h) => h,
+                None => {
+                    let (_, info) = server.connect_checked().await?;
+                    info.block_height as u32
+                }
+            };
+            let (kps, pkp) = frost::dkg_local()?;
+            std::fs::create_dir_all(&out)?;
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::PermissionsExt;
+                let _ = std::fs::set_permissions(&out, std::fs::Permissions::from_mode(0o700));
+            }
+            let group = frost::group_file(&pkp, server.network, created_height)?;
+            let mut files = vec![];
+            for kp in &kps {
+                let share = frost::share_file(kp, &pkp, server.network)?;
+                let path = out.join(format!("share-{}.json", share.identifier));
+                write_private_json(&path, &serde_json::to_vec_pretty(&share)?)?;
+                files.push(path.display().to_string());
+            }
+            let gpath = out.join("group.json");
+            std::fs::write(&gpath, serde_json::to_vec_pretty(&group)?)?;
+            info!("FROST 2-of-3 group key made: bond address {} (shares in {}; never share a share file)", group.address, out.display());
+            Ok(json!({
+                "network": group.network,
+                "threshold": group.threshold,
+                "participants": group.participants,
+                "roles": frost::ROLES,
+                "ak": group.ak,
+                "ufvk": group.ufvk,
+                "address": group.address,
+                "createdHeight": group.created_height,
+                "group": gpath.display().to_string(),
+                "shares": files,
+            }))
+        }
+        FrostCommand::Balance { net, group, wallet } => {
+            let g = frost::read_group(&group)?;
+            let mut w = open_bond_wallet(&net, &group, &g, wallet, 10).await?;
+            let sync = w.sync_bounded(EXPLICIT_SYNC_BUDGET, 1000).await?;
+            let balance = w.balance()?;
+            Ok(json!({
+                "address": g.address,
+                "bondAddress": w.address()?,
+                "network": g.network,
+                "tip": sync.tip,
+                "balance": balance,
+                "viewOnly": w.view_only(),
+            }))
+        }
+        FrostCommand::Spend { net, group, wallet, shares, to, zats, memo_hex, untrusted_confirmations } => {
+            let g = frost::read_group(&group)?;
+            let pkp = frost::parse_public_key_package(&g.public_key_package)?;
+            let mut kps = vec![];
+            for p in &shares {
+                let s = frost::read_share(p)?;
+                if s.network != g.network {
+                    anyhow::bail!("share {} is for network {} but the group is on {}", p.display(), s.network, g.network);
+                }
+                if s.public_key_package != g.public_key_package {
+                    anyhow::bail!("share {} belongs to a different group key", p.display());
+                }
+                kps.push(frost::parse_key_package(&s.key_package)?);
+            }
+            let mut memo = hex::decode(memo_hex.unwrap_or_default()).context("memo-hex")?;
+            if memo.len() > 512 {
+                anyhow::bail!("memo longer than 512 bytes");
+            }
+            memo.resize(512, 0);
+            let mut w = open_bond_wallet(&net, &group, &g, wallet, untrusted_confirmations).await?;
+            let sync = w.sync_bounded(EXPLICIT_SYNC_BUDGET, 1000).await?;
+            let signers: Vec<String> = kps
+                .iter()
+                .map(|k| frost::role_name(frost::ident_u16(k.identifier())).to_string())
+                .collect();
+            let report = frost::spend(&mut w, &kps, &pkp, vec![OutputReq { to, zats, memo }]).await.map_err(|e| anyhow::anyhow!("{e}"))?;
+            Ok(json!({
+                "txid": report.txid,
+                "feeZats": report.fee_zats,
+                "actions": report.actions,
+                "signers": signers,
+                "tip": sync.tip,
+                "proposeMs": report.propose_ms,
+                "proveMs": report.prove_ms,
+                "broadcastMs": report.broadcast_ms,
+                "expiryHeight": report.expiry_height,
+                "ironwoodOnly": true,
+            }))
+        }
+    }
+}
+
+/// The bond's watch-only wallet: created from the group's UFVK on first use, in `wallet` or
+/// next to the group file.
+async fn open_bond_wallet(net: &NetArgs, group_path: &std::path::Path, g: &frost::GroupFile, wallet: Option<PathBuf>, untrusted_confirmations: u32) -> anyhow::Result<Wallet> {
+    let server = server_for(&net.network, net.server.as_deref(), net.proxy.as_deref())?;
+    if chain_name(server.network) != g.network {
+        anyhow::bail!("group file is for network {} but --network is {}", g.network, chain_name(server.network));
+    }
+    let data_dir = wallet.unwrap_or_else(|| group_path.parent().unwrap_or_else(|| std::path::Path::new(".")).join("wallet"));
+    let opts = wallet::Opts {
+        network: server.network,
+        data_dir,
+        server,
+        create: false,
+        birthday: Some(g.created_height),
+        trusted_confirmations: 3,
+        untrusted_confirmations,
+        target_note_count: 1,
+        min_split_zats: 1_000_000,
+        view_only: true,
+        ufvk: Some(g.ufvk.clone()),
+    };
+    let w = Wallet::open(opts).await?;
+    if w.address()? != g.address {
+        anyhow::bail!("the wallet's address {} is not the group's bond address {}", w.address()?, g.address);
+    }
+    Ok(w)
+}
+
+fn write_private_json(path: &std::path::Path, bytes: &[u8]) -> anyhow::Result<()> {
+    use std::io::Write;
+    let mut f = std::fs::OpenOptions::new().write(true).create(true).truncate(true).mode(0o600).open(path).with_context(|| format!("writing {}", path.display()))?;
+    f.write_all(bytes)?;
+    Ok(())
 }
 
 /// `--network`, `--server` (default by network) and `--proxy` → the server to talk to.

@@ -25,8 +25,8 @@ use rand::rand_core::UnwrapErr;
 use rand::rngs::SysRng;
 
 /// The OS RNG; `UnwrapErr` turns rand 0.10's fallible `SysRng` into the infallible `Rng` the wallet DB needs.
-type OsRng = UnwrapErr<SysRng>;
-fn os_rng() -> OsRng {
+pub(crate) type OsRng = UnwrapErr<SysRng>;
+pub(crate) fn os_rng() -> OsRng {
     UnwrapErr(SysRng)
 }
 use secrecy::{ExposeSecret, SecretVec, Zeroize};
@@ -77,7 +77,9 @@ use crate::{
     views::{self, ViewStore},
 };
 
-type Db = WalletDb<rusqlite::Connection, Network, SystemClock, OsRng>;
+pub(crate) type Db = WalletDb<rusqlite::Connection, Network, SystemClock, OsRng>;
+/// What `propose` returns: a one-step, Ironwood-only proposal over this wallet's note references.
+pub(crate) type Proposal = zcash_client_backend::proposal::Proposal<StandardFeeRule, zcash_client_sqlite::ReceivedNoteId>;
 
 const META_FILE: &str = "wallet.json";
 /// BIP-39 phrase. Matches the repo's `*.seed` gitignore rule; mode 0600; never printed.
@@ -251,11 +253,11 @@ pub struct SyncReport {
 pub struct Wallet {
     pub params: Network,
     pub opts: Opts,
-    db: Db,
+    pub(crate) db: Db,
     ro: rusqlite::Connection,
-    account: AccountUuid,
+    pub(crate) account: AccountUuid,
     ufvk: UnifiedFullViewingKey,
-    client: Client,
+    pub(crate) client: Client,
     pub server_info: service::LightdInfo,
     pub mempool: mempool::Shared,
     last_sync: Option<Instant>,
@@ -605,10 +607,12 @@ impl Wallet {
         self.birthday
     }
 
-    fn confirmations(&self) -> ConfirmationsPolicy {
+    pub(crate) fn confirmations(&self) -> ConfirmationsPolicy {
         let t = NonZeroU32::new(self.opts.trusted_confirmations.max(1)).unwrap();
         let u = NonZeroU32::new(self.opts.untrusted_confirmations.max(self.opts.trusted_confirmations).max(1)).unwrap();
-        ConfirmationsPolicy::new(t, u).unwrap_or_default()
+        // The third argument (zero-conf shielding) only exists because the pczt feature drags in
+        // transparent-inputs; this wallet never shields.
+        ConfirmationsPolicy::new(t, u, false).unwrap_or_default()
     }
 
     pub fn sync_age(&self) -> Option<Duration> {
@@ -987,6 +991,10 @@ impl Wallet {
                             decrypt_and_store_transaction(&self.params, &mut self.db, &tx, h)?;
                         }
                     }
+                    // Only exists because the pczt feature enables transparent-inputs. The account
+                    // has no transparent key, so the backend never asks; and we would not answer:
+                    // a GetTaddressTxids call would name an address to the server.
+                    TransactionDataRequest::TransactionsInvolvingAddress(_) => {}
                 }
             }
             if !progressed {
@@ -1307,6 +1315,53 @@ impl Wallet {
                 "this wallet is watch-only (opened from a viewing key): it can see every payment but holds no spending key, so it cannot send".into(),
             ));
         }
+        let request = self.build_request(&outputs)?;
+
+        let t0 = Instant::now();
+        let proposal = self.propose(request)?;
+        let step = proposal.steps().first();
+        let fee = step.balance().fee_required();
+        let propose_ms = t0.elapsed().as_millis();
+
+        let t1 = Instant::now();
+        let usk = self.usk()?;
+        let prover = LocalTxProver::bundled();
+        let txids = tokio::task::block_in_place(|| {
+            create_proposed_transactions::<_, _, std::convert::Infallible, _, std::convert::Infallible, _>(
+                &mut self.db,
+                &self.params,
+                &SystemClock,
+                &mut os_rng(),
+                &prover,
+                &prover,
+                &SpendingKeys::from_unified_spending_key(usk),
+                OvkPolicy::Sender,
+                &proposal,
+                None,
+            )
+        })
+        .map_err(|e| WalletError::Other(anyhow!("building transaction failed: {e}")))?;
+        if txids.len() != 1 {
+            return Err(WalletError::Privacy("refusing a multi-transaction proposal".into()));
+        }
+        let txid = *txids.first();
+        let prove_ms = t1.elapsed().as_millis();
+
+        let (actions, broadcast_ms, expiry_height) = self.broadcast_built(txid).await?;
+        info!("broadcast {txid} ({} outputs, {actions} actions, fee {})", outputs.len(), fee.into_u64());
+        Ok(SendReport {
+            txid: txid.to_string(),
+            fee_zats: fee.into_u64().to_string(),
+            actions,
+            propose_ms,
+            prove_ms,
+            broadcast_ms,
+            expiry_height,
+        })
+    }
+
+    /// Outputs → ZIP 321 request, after the recipient guard (Orchard receivers only) and the memo check.
+    pub(crate) fn build_request(&self, outputs: &[OutputReq]) -> Result<TransactionRequest, WalletError> {
         if outputs.is_empty() {
             return Err(WalletError::BadRequest("send needs at least one output".into()));
         }
@@ -1327,9 +1382,12 @@ impl Wallet {
                     .map_err(|e| WalletError::BadRequest(format!("output {i}: {e:?}")))?,
             );
         }
-        let request = TransactionRequest::new(payments).map_err(|e| WalletError::BadRequest(format!("{e:?}")))?;
+        TransactionRequest::new(payments).map_err(|e| WalletError::BadRequest(format!("{e:?}")))
+    }
 
-        let t0 = Instant::now();
+    /// Ironwood-only proposal for `request` (one step, Ironwood inputs, Ironwood payments and change),
+    /// checked by `check_proposal`.
+    pub(crate) fn propose(&mut self, request: TransactionRequest) -> Result<Proposal, WalletError> {
         let change_strategy = MultiOutputChangeStrategy::new(
             StandardFeeRule::Zip317,
             None,
@@ -1382,34 +1440,12 @@ impl Wallet {
             }
         })?;
         check_proposal(&proposal)?;
-        let step = proposal.steps().first();
-        let fee = step.balance().fee_required();
-        let propose_ms = t0.elapsed().as_millis();
+        Ok(proposal)
+    }
 
-        let t1 = Instant::now();
-        let usk = self.usk()?;
-        let prover = LocalTxProver::bundled();
-        let txids = tokio::task::block_in_place(|| {
-            create_proposed_transactions::<_, _, std::convert::Infallible, _, std::convert::Infallible, _>(
-                &mut self.db,
-                &self.params,
-                &SystemClock,
-                &mut os_rng(),
-                &prover,
-                &prover,
-                &SpendingKeys::from_unified_spending_key(usk),
-                OvkPolicy::Sender,
-                &proposal,
-                None,
-            )
-        })
-        .map_err(|e| WalletError::Other(anyhow!("building transaction failed: {e}")))?;
-        if txids.len() != 1 {
-            return Err(WalletError::Privacy("refusing a multi-transaction proposal".into()));
-        }
-        let txid = *txids.first();
-        let prove_ms = t1.elapsed().as_millis();
-
+    /// Final checks and broadcast of a transaction the wallet database already holds (built by
+    /// `create_proposed_transactions` or extracted from a PCZT). Returns (actions, broadcast ms, expiry).
+    pub(crate) async fn broadcast_built(&mut self, txid: TxId) -> Result<(usize, u128, u32), WalletError> {
         let tx = self
             .db
             .get_transaction(txid)
@@ -1457,16 +1493,7 @@ impl Wallet {
             return Err(WalletError::Other(anyhow!("broadcast of {txid} failed: {e}")));
         }
         let broadcast_ms = t2.elapsed().as_millis();
-        info!("broadcast {txid} ({} outputs, {actions} actions, fee {})", outputs.len(), fee.into_u64());
-        Ok(SendReport {
-            txid: txid.to_string(),
-            fee_zats: fee.into_u64().to_string(),
-            actions,
-            propose_ms,
-            prove_ms,
-            broadcast_ms,
-            expiry_height: u32::from(tx.expiry_height()),
-        })
+        Ok((actions, broadcast_ms, u32::from(tx.expiry_height())))
     }
 
     fn block_time(&self, height: BlockHeight) -> Option<u32> {
@@ -1518,7 +1545,7 @@ impl Wallet {
 }
 
 /// The proposal must be one step, spend only Ironwood notes and pay/change only into Ironwood.
-fn check_proposal<F, N>(proposal: &zcash_client_backend::proposal::Proposal<F, N>) -> Result<(), WalletError> {
+pub(crate) fn check_proposal<F, N>(proposal: &zcash_client_backend::proposal::Proposal<F, N>) -> Result<(), WalletError> {
     if proposal.steps().len() != 1 {
         return Err(WalletError::Privacy("refusing a multi-step proposal (would route through transparent ephemeral addresses)".into()));
     }
@@ -1547,7 +1574,7 @@ fn check_proposal<F, N>(proposal: &zcash_client_backend::proposal::Proposal<F, N
 }
 
 /// Last check before broadcast: the transaction itself has only an Ironwood bundle.
-fn check_built_tx(tx: &Transaction) -> Result<usize, WalletError> {
+pub(crate) fn check_built_tx(tx: &Transaction) -> Result<usize, WalletError> {
     if tx.transparent_bundle().is_some_and(|b| !b.vin.is_empty() || !b.vout.is_empty()) {
         return Err(WalletError::Privacy("built transaction has transparent parts; not broadcasting".into()));
     }
