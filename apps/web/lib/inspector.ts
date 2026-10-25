@@ -276,7 +276,8 @@ export function buildInspector(s: State, rfqId: string | null, now: number): Ins
   const buyerOnline = s.conn.buyer.status === 'online';
   const providerOnline = s.conn.provider.status === 'online';
   const statuses = [buyerOnline ? s.buyerStatus : null, providerOnline ? s.providerStatus : null].filter((x) => !!x);
-  const demo = (statuses.length > 0 && statuses.every((x) => x!.demoMode));
+  // demoMode: every party on this machine. publicDemo: the hosted demo, where every party is on the one host too.
+  const demo = statuses.length > 0 && statuses.every((x) => x!.demoMode || x!.publicDemo === true);
   const home: Party | null = buyerOnline ? 'buyer' : providerOnline ? 'provider' : null;
   const homeStatus = home === 'buyer' ? s.buyerStatus : home === 'provider' ? s.providerStatus : null;
   const network = statuses[0]?.network ?? null;

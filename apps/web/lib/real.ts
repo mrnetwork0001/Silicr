@@ -326,13 +326,13 @@ export class RealDriver implements Driver {
   // -------------------------------------------------------------------------
   // Leak Inspector
 
-  /** True only if every connected daemon says all parties run on this machine. */
+  /** True only if every connected daemon says all parties run on one machine (demoMode, or the hosted public demo). */
   private demoMode(): boolean {
     const s = getState();
     const statuses = [this.online.buyer ? s.buyerStatus : null, this.online.provider ? s.providerStatus : null].filter(
       (x): x is StatusDto => !!x,
     );
-    return statuses.length > 0 && statuses.every((x) => x.demoMode === true);
+    return statuses.length > 0 && statuses.every((x) => x.demoMode === true || x.publicDemo === true);
   }
 
   async refreshInspector(target: InspectorTarget): Promise<void> {
