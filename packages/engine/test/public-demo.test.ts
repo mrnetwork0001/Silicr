@@ -8,7 +8,7 @@ import { join } from 'node:path';
 import { BuyerNode } from '../src/buyer.ts';
 import { startDaemon, type RunningDaemon } from '../src/daemon.ts';
 import type { JobPreset } from '../src/presets.ts';
-import { DEFAULT_PRESETS } from '../src/presets.ts';
+import { DEFAULT_PRESETS, PUBLIC_DEMO_INTERVAL_S } from '../src/presets.ts';
 import { FakeRelay, fakeBundles, makeWorld, tempDir, waitFor, type World } from './helpers.ts';
 
 const PUBLIC = 'https://app.silicr.38-49-213-208.sslip.io';
@@ -65,6 +65,9 @@ describe('public demo: status', () => {
     const p = await call<StatusDto>(providerD.url, 'GET', '/api/status');
     expect(p.body.publicDemo).toBe(true);
     expect(p.body.presets).toBeUndefined();
+    // Every party of a public demo runs on one host: the Leak Inspector may read all their views.
+    expect(b.body.demoMode).toBe(true);
+    expect(p.body.demoMode).toBe(true);
   });
 
   it('a normal daemon reports no publicDemo', async () => {
@@ -73,14 +76,20 @@ describe('public demo: status', () => {
       const s = await call<StatusDto>(d.url, 'GET', '/api/status');
       expect(s.body.publicDemo).toBeUndefined();
       expect(s.body.presets).toBeUndefined();
+      expect(s.body.demoMode).toBe(false);
     } finally {
       await d.close();
     }
   });
 
   it('default presets point at examples/tiny-train', () => {
-    expect(DEFAULT_PRESETS.map((p) => p.id)).toEqual(['tiny-train', 'tiny-train-quick']);
+    expect(DEFAULT_PRESETS.map((p) => p.id)).toEqual(['tiny-train', 'tiny-train-quick', 'tiny-train-long']);
     for (const p of DEFAULT_PRESETS) expect(p.path).toMatch(/examples\/tiny-train$/);
+    // The long run shows a PAY train: ~8 min of steps inside a 15 min request, several 60 s intervals.
+    const long = DEFAULT_PRESETS.find((p) => p.id === 'tiny-train-long')!;
+    expect(long.env).toEqual({ SILICR_STEPS: '2000', SILICR_STEP_DELAY_MS: '250' });
+    expect(long.durationS).toBe(900);
+    expect(PUBLIC_DEMO_INTERVAL_S).toBe(60);
   });
 });
 
@@ -125,6 +134,60 @@ describe('public demo: POST /api/rfqs', () => {
       return r.state === 'closed' || r.state === 'failed' ? r : null;
     }, 'closed', 20_000);
   }, 30_000);
+
+  it('auto-accepts the cheapest bid when the request says nothing about it; only the creating visitor may stop, accept or fault it', async () => {
+    const mine = { 'X-Forwarded-For': '203.0.113.21' };
+    const other = { 'X-Forwarded-For': '203.0.113.22' };
+    const created = await call<{ rfqId: string }>(buyerD.url, 'POST', '/api/rfqs', rfq({ preset: 'tiny-train' }), mine);
+    expect(created.status).toBe(201);
+    const id = created.body.rfqId;
+    // Nobody calls accept: the daemon filled in autoAccept (cheapest, 1 block) and the deal goes ahead on its own.
+    await waitFor(async () => {
+      const r = (await call<RfqDto>(buyerD.url, 'GET', `/api/rfqs/${id}`)).body;
+      return r.state === 'accepted' || r.state === 'running' ? r : null;
+    }, 'auto-accepted', 20_000);
+    // Another visitor cannot touch it.
+    for (const [path, body] of [
+      [`/api/rfqs/${id}/stop`, {}],
+      [`/api/rfqs/${id}/accept`, { providerId: 'ab'.repeat(32) }],
+      [`/api/rfqs/${id}/fault`, { fault: 'stop_paying' }],
+    ] as [string, unknown][]) {
+      const r = await call<ErrorDto>(buyerD.url, 'POST', path, body, other);
+      expect(r.status, path).toBe(403);
+      expect(r.body.code).toBe('demo_other_visitor');
+      expect(r.body.error).toMatch(/another visitor/);
+    }
+    // The creator can.
+    const stopped = await call<RfqDto>(buyerD.url, 'POST', `/api/rfqs/${id}/stop`, {}, mine);
+    expect(stopped.status).toBe(200);
+    await waitFor(async () => {
+      const r = (await call<RfqDto>(buyerD.url, 'GET', `/api/rfqs/${id}`)).body;
+      return r.state === 'closed' || r.state === 'failed' ? r : null;
+    }, 'closed', 20_000);
+  }, 45_000);
+
+  it('a request nobody accepts expires acceptWindowBlocks after its bid window, freeing the slot', async () => {
+    // autoAccept: null = manual acceptance; the bids arrive and nobody accepts.
+    const created = await call<{ rfqId: string }>(buyerD.url, 'POST', '/api/rfqs', rfq({ preset: 'tiny-train' }, { autoAccept: null }), { 'X-Forwarded-For': '203.0.113.31' });
+    expect(created.status).toBe(201);
+    const id = created.body.rfqId;
+    const collecting = await waitFor(async () => {
+      const r = (await call<RfqDto>(buyerD.url, 'GET', `/api/rfqs/${id}`)).body;
+      return r.state === 'collecting' && r.bids.length > 0 ? r : null;
+    }, 'a bid', 20_000);
+    const expired = await waitFor(async () => {
+      const r = (await call<RfqDto>(buyerD.url, 'GET', `/api/rfqs/${id}`)).body;
+      return r.state === 'expired' ? r : null;
+    }, 'expired', 30_000);
+    expect(expired.error).toMatch(/not accepted in time/);
+    // The memory profile alone would have waited 120 blocks; the demo cap is 4 blocks past expiresHeight.
+    expect(w.buyer.record(id)!.expiresHeight + 4).toBeLessThanOrEqual(await w.buyer.status().then((s) => s.height));
+    expect(collecting.expiresHeight).toBe(expired.expiresHeight);
+    // Too late to accept now, and the slot is free again.
+    const late = await call<ErrorDto>(buyerD.url, 'POST', `/api/rfqs/${id}/accept`, { providerId: collecting.bids[0]!.providerId }, { 'X-Forwarded-For': '203.0.113.31' });
+    expect(late.status).toBe(409);
+    expect((await call<ErrorDto>(buyerD.url, 'POST', '/api/rfqs', rfq({ preset: 'tiny-train' }, { providerIds: ['ff'.repeat(32)] }), { 'X-Forwarded-For': '203.0.113.32' })).status).toBe(400);
+  }, 60_000);
 
   it('rate limits per client IP (X-Forwarded-For with --trust-proxy), resetting after an hour', async () => {
     let now = 1_000_000;

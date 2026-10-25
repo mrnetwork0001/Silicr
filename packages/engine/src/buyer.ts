@@ -223,6 +223,8 @@ export class BuyerNode extends NodeBase {
   private readonly maxResultBytes: number;
   private readonly homeDir: string | undefined;
   private readonly maxCheckpointBytes: number;
+  /** Public demo: at most this many blocks after expiresHeight for an ACCEPT (the profile allows ~25 min). */
+  private acceptWindowLimit: number | null = null;
 
   constructor(o: BuyerNodeOptions) {
     super('buyer', o);
@@ -328,6 +330,22 @@ export class BuyerNode extends NodeBase {
     if (!r) return;
     r.feesZats += feeZats + valueZats;
     this.changed(r);
+  }
+
+  /**
+   * Cap the accept window: a collecting RFQ that nobody accepts within `blocks` after its expiresHeight
+   * expires ('bids were not accepted in time'). The public demo uses it so one abandoned request
+   * cannot hold the shared slot for the profile's full window.
+   */
+  limitAcceptWindow(blocks: number): void {
+    if (!Number.isInteger(blocks) || blocks < 0) throw badRequest('acceptWindowBlocks must be a non-negative integer');
+    this.acceptWindowLimit = blocks;
+  }
+
+  /** Blocks after expiresHeight during which an ACCEPT is still possible. */
+  private acceptWindowBlocks(r: BuyerRfq): number {
+    const w = profileAtHeight(this.profile, r.expiresHeight).acceptWindowBlocks;
+    return this.acceptWindowLimit === null ? w : Math.min(w, this.acceptWindowLimit);
   }
 
   /** Any request not yet closed, expired or failed: its ACCEPT and PAYs need the balance. */
@@ -831,7 +849,7 @@ export class BuyerNode extends NodeBase {
           r.state = 'expired';
           r.error = 'no acceptable bids before expiry';
           this.changed(r);
-        } else if (tip > r.expiresHeight + profileAtHeight(this.profile, r.expiresHeight).acceptWindowBlocks) {
+        } else if (tip > r.expiresHeight + this.acceptWindowBlocks(r)) {
           r.state = 'expired';
           r.error = 'bids were not accepted in time';
           this.changed(r);
@@ -921,7 +939,7 @@ export class BuyerNode extends NodeBase {
     const rt = this.runtime(r);
     if (r.state !== 'collecting') throw conflict(`RFQ is ${r.state}; only a collecting RFQ can be accepted`);
     if (rt.accepting) throw conflict('an accept is already in progress');
-    if (this.lastTip > r.expiresHeight + profileAtHeight(this.profile, r.expiresHeight).acceptWindowBlocks) throw conflict('too late: providers have given up on this RFQ');
+    if (this.lastTip > r.expiresHeight + this.acceptWindowBlocks(r)) throw conflict('too late: providers have given up on this RFQ');
     const pid = String(providerId).toLowerCase();
     const candidates = r.bids.filter((b) => b.providerId === pid);
     if (candidates.length === 0) throw notFound(`no valid bid from provider ${shortHex(pid)}`);

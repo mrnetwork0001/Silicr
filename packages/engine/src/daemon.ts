@@ -27,11 +27,17 @@ export interface PublicDemoOptions {
   perIpPerHour?: number;
   /** Highest max price a visitor may set, zatoshis per hour. Default 0.5 ZEC/h (testnet coins). */
   maxPricePerHourZats?: bigint;
+  /**
+   * Buyer: how many blocks after an RFQ's expiresHeight an unaccepted request may linger before it
+   * expires and frees the single slot (the profile allows ~25 min; a visitor who walks away would
+   * block everyone else). Default 4 (~7 min in all on testnet, bid window included).
+   */
+  acceptWindowBlocks?: number;
   /** Clock for the rate limit (tests). */
   now?: () => number;
 }
 
-export const PUBLIC_DEMO_DEFAULTS = { maxDurationS: 900, maxCount: 1, maxActive: 1, perIpPerHour: 3, maxPricePerHourZats: 50_000_000n } as const;
+export const PUBLIC_DEMO_DEFAULTS = { maxDurationS: 900, maxCount: 1, maxActive: 1, perIpPerHour: 3, maxPricePerHourZats: 50_000_000n, acceptWindowBlocks: 4 } as const;
 
 export interface DaemonOptions {
   node: BuyerNode | ProviderNode;
@@ -81,12 +87,16 @@ export async function startDaemon(o: DaemonOptions): Promise<RunningDaemon> {
   const demo = o.publicDemo ? resolvePublicDemo(o.publicDemo === true ? {} : o.publicDemo) : null;
   if (demo && node.network === 'main') throw new Error('--public-demo is refused on Zcash mainnet: a public demo spends a shared wallet; run it on testnet');
   const rateLog = new Map<string, number[]>();
+  /** Public demo: which client IP created each RFQ (memory only); stop, accept and fault are theirs alone. */
+  const creators = new Map<string, string>();
   let creating = false;
   const sse = new Set<ServerResponse>();
   let boundPort = 0;
 
   const buyer = (): BuyerNode => node as BuyerNode;
   const provider = (): ProviderNode => node as ProviderNode;
+  // Public demo buyer: an unaccepted request frees the single slot after a few blocks, not ~25 min.
+  if (demo && node.role === 'buyer') buyer().limitAcceptWindow(demo.acceptWindowBlocks);
 
   const routes: Route[] = [
     { method: 'GET', re: /^\/api\/status$/, handle: async (c) => send(c, 200, await status()) },
@@ -118,9 +128,13 @@ export async function startDaemon(o: DaemonOptions): Promise<RunningDaemon> {
     { method: 'POST', re: /^\/api\/rfqs\/([0-9a-fA-F]{32})\/accept$/, role: 'buyer', handle: async (c) => {
         const body = (await readJson(c)) as { providerId?: unknown };
         if (!body || typeof body.providerId !== 'string' || !/^[0-9a-fA-F]{64}$/.test(body.providerId)) throw badRequest('body must be { providerId: <64 hex chars> }');
+        demoOwnerOnly(c, c.params[0]!);
         send(c, 200, await buyer().accept(c.params[0]!, body.providerId));
       } },
-    { method: 'POST', re: /^\/api\/rfqs\/([0-9a-fA-F]{32})\/stop$/, role: 'buyer', handle: async (c) => send(c, 200, await buyer().stop(c.params[0]!)) },
+    { method: 'POST', re: /^\/api\/rfqs\/([0-9a-fA-F]{32})\/stop$/, role: 'buyer', handle: async (c) => {
+        demoOwnerOnly(c, c.params[0]!);
+        send(c, 200, await buyer().stop(c.params[0]!));
+      } },
     { method: 'POST', re: /^\/api\/rfqs\/([0-9a-fA-F]{32})\/migrate$/, role: 'buyer', handle: async (c) => {
         demoDisabled('migrating a job');
         send(c, 201, await buyer().migrate(c.params[0]!, (await readJson(c)) as never));
@@ -128,6 +142,7 @@ export async function startDaemon(o: DaemonOptions): Promise<RunningDaemon> {
     { method: 'POST', re: /^\/api\/rfqs\/([0-9a-fA-F]{32})\/fault$/, role: 'buyer', handle: async (c) => {
         const body = (await readJson(c)) as { fault?: unknown };
         if (body?.fault !== 'stop_paying' && body?.fault !== 'resume_paying') throw badRequest('body must be { fault: "stop_paying" | "resume_paying" }');
+        demoOwnerOnly(c, c.params[0]!);
         send(c, 200, buyer().fault(c.params[0]!, body.fault as BuyerFault));
       } },
     { method: 'GET', re: /^\/api\/rfqs\/([0-9a-fA-F]{32})\/result$/, role: 'buyer', handle: async (c) => {
@@ -164,7 +179,8 @@ export async function startDaemon(o: DaemonOptions): Promise<RunningDaemon> {
   async function status(): Promise<StatusDto> {
     const s = await node.status();
     if (!demo) return s;
-    const out: StatusDto = { ...s, publicDemo: true };
+    // Every party of a public demo runs on the one host, so the terminal may read all their views (Leak Inspector).
+    const out: StatusDto = { ...s, publicDemo: true, demoMode: true };
     if (node.role === 'buyer') {
       out.presets = demo.presets.map(presetDto);
       out.publicDemoLimits = { maxDurationS: demo.maxDurationS, maxCount: demo.maxCount, maxActive: demo.maxActive, perIpPerHour: demo.perIpPerHour, maxPricePerHourZats: demo.maxPricePerHourZats.toString() };
@@ -174,6 +190,16 @@ export async function startDaemon(o: DaemonOptions): Promise<RunningDaemon> {
 
   function demoDisabled(what: string): void {
     if (demo) throw new EngineError('demo_disabled', `${what} is disabled in the public testnet demo`, 403);
+  }
+
+  /** Public demo: only the visitor (client IP) who created an RFQ may stop, accept or fault it. */
+  function demoOwnerOnly(c: Ctx, rfqId: string): void {
+    if (!demo) return;
+    const owner = creators.get(rfqId.toLowerCase());
+    // Unknown creator (made before a restart): nobody is locked out of freeing the slot.
+    if (owner !== undefined && owner !== clientIp(c)) {
+      throw new EngineError('demo_other_visitor', "This request was made by another visitor; only they can stop, accept or fault it. Watch it in the Market, or make your own once it's done.", 403);
+    }
   }
 
   function clientIp(c: Ctx): string {
@@ -228,10 +254,14 @@ export async function startDaemon(o: DaemonOptions): Promise<RunningDaemon> {
     };
     if (body['discloseMax'] !== undefined) req.discloseMax = body['discloseMax'] as boolean;
     if (body['providerIds'] !== undefined) req.providerIds = body['providerIds'] as string[];
-    if (body['autoAccept'] !== undefined) req.autoAccept = body['autoAccept'] as NewRfqRequest['autoAccept'];
+    // Absent (an API client that never thought about it): auto-accept the cheapest bid after one block, so an
+    // unattended request runs instead of holding the slot. An explicit null keeps manual acceptance.
+    req.autoAccept = body['autoAccept'] === undefined ? { rule: 'cheapest', waitBlocks: 1 } : (body['autoAccept'] as NewRfqRequest['autoAccept']);
     creating = true;
     try {
-      return await buyer().createRfq(req);
+      const created = await buyer().createRfq(req);
+      creators.set(created.rfqId.toLowerCase(), ip);
+      return created;
     } finally {
       creating = false;
     }
@@ -411,6 +441,7 @@ function resolvePublicDemo(p: PublicDemoOptions): Required<PublicDemoOptions> {
     maxActive: p.maxActive ?? PUBLIC_DEMO_DEFAULTS.maxActive,
     perIpPerHour: p.perIpPerHour ?? PUBLIC_DEMO_DEFAULTS.perIpPerHour,
     maxPricePerHourZats: p.maxPricePerHourZats ?? PUBLIC_DEMO_DEFAULTS.maxPricePerHourZats,
+    acceptWindowBlocks: p.acceptWindowBlocks ?? PUBLIC_DEMO_DEFAULTS.acceptWindowBlocks,
     now: p.now ?? Date.now,
   };
 }
