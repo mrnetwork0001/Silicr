@@ -83,7 +83,7 @@ export interface StatusDto {
   providerId?: Hex;
   version: string;
   /**
-   * True when every party runs on this machine (zero-setup demo or local testnet demo),
+   * True when every party runs on this machine (the testnet demo, or a single-machine stack),
    * so the web terminal may query the other parties' daemons for the Leak Inspector.
    */
   demoMode: boolean;

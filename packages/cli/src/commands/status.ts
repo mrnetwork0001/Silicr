@@ -46,7 +46,7 @@ export async function status(o: { buyer?: string; provider?: string }): Promise<
   }
   console.log();
   if (!any) {
-    console.log(`  Start the zero-setup demo with ${pc.bold('pnpm silicr demo')}, or a daemon with ${pc.bold('silicr daemon --data <dir>')}.\n`);
+    console.log(`  Start the testnet demo with ${pc.bold('pnpm silicr demo')}, or a daemon with ${pc.bold('silicr daemon --data <dir>')}.\n`);
     process.exitCode = 1;
   }
 }
