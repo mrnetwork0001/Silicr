@@ -54,13 +54,13 @@ If a check fails, the line after its evidence starts with `FAILED:` and names th
 
 ## 4. The other one-liners (another five minutes)
 
-**The test suites.** `pnpm test` runs every package's Vitest suite (`pnpm --filter @silicr/<pkg> test` for one). Counts measured in this checkout on 2026-10-25: 906 tests across 8 packages, **885 passed, 21 skipped, 0 failed** (the skips are the 14 live-network tests behind `SILICR_TESTNET_LIVE` / `SILICR_MAINNET_LIVE` and the 7 Docker probes that need a Docker daemon):
+**The test suites.** `pnpm test` runs every package's Vitest suite (`pnpm --filter @silicr/<pkg> test` for one). Counts measured in this checkout on 2026-10-25: 912 tests across 8 packages, **891 passed, 21 skipped, 0 failed** (the skips are the 14 live-network tests behind `SILICR_TESTNET_LIVE` / `SILICR_MAINNET_LIVE` and the 7 Docker probes that need a Docker daemon):
 
 | Package | Tests | What they cover |
 |---|---|---|
 | `@silicr/api` | 0 (types only) | the daemon ↔ web contract |
-| `@silicr/cli` | 44 | every command against an in-process stack, including `run --auto` and `migrate` end to end; mainnet refusals and go-aheads; the networks offered; the audit receipt; viewing keys |
-| `@silicr/engine` | 126 | happy path, padding and text-memo fallback, settlement (C1, M5), faults, forged messages, guards, daemon surface, persistence, chunked blobs, proxy support, the public demo and its mainnet hard ceiling, relay-less memo transport, the wallet and outage handling |
+| `@silicr/cli` | 50 | every command against an in-process stack, including `run --auto` and `migrate` end to end; mainnet refusals and go-aheads; the networks offered; the audit receipt; viewing keys |
+| `@silicr/engine` | 128 | happy path, padding and text-memo fallback, settlement (C1, M5), faults, forged messages, guards, daemon surface, persistence, chunked blobs, proxy support, the public demo and its mainnet hard ceiling, relay-less memo transport, the wallet and outage handling |
 | `@silicr/mcp` | 23 | the MCP server that lets an agent rent compute through the local buyer daemon |
 | `@silicr/protocol` | 325 | memo wire format and size budget, every-byte flips and 5000-case fuzz, strict signatures, channel crypto, heartbeats, directory entries, CBOR |
 | `@silicr/relay` | 46 | mailboxes, limits, TTL, directory forgery and eviction, CORS, observer feed privacy, client retries, SOCKS proxying |
