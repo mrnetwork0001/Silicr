@@ -107,3 +107,34 @@ export function derive(f: RequestFormState, demo: PublicDemoRules | null = null)
     errors,
   };
 }
+
+/** The public demo's budget at a glance: the cap, what is spent and left, and whether the demo is over. */
+export interface PublicDemoBudget {
+  /** `--allow-mainnet`: real ZEC from a tiny shared wallet. */
+  mainnet: boolean;
+  /** The daemon says the wallet (or the cap) can no longer afford the cheapest preset. */
+  exhausted: boolean;
+  /** Zatoshis, when the daemon reports a spend cap. */
+  cap: { spent: bigint; total: bigint; remaining: bigint; perRfq: bigint } | null;
+  /** The cheapest preset's worst case (payments at the max price plus fees), when reported. */
+  minWorstCase: bigint | null;
+}
+
+export function publicDemoBudget(status: StatusDto | null): PublicDemoBudget | null {
+  if (!status?.publicDemo) return null;
+  const zats = (s: string | undefined): bigint | null => (s !== undefined && /^\d+$/.test(s) ? BigInt(s) : null);
+  let cap: PublicDemoBudget['cap'] = null;
+  const c = status.spendCap;
+  if (c) {
+    const spent = zats(c.spentZats);
+    const total = zats(c.totalZats);
+    const perRfq = zats(c.perRfqZats);
+    if (spent !== null && total !== null && perRfq !== null) cap = { spent, total, remaining: total > spent ? total - spent : 0n, perRfq };
+  }
+  return {
+    mainnet: status.network === 'main' || !!status.publicDemoLimits?.allowMainnet,
+    exhausted: status.demoExhausted === true,
+    cap,
+    minWorstCase: zats(status.publicDemoLimits?.minWorstCaseZats),
+  };
+}

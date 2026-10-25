@@ -7,10 +7,10 @@ import { errorMessage } from '@/lib/client';
 import { hostOf } from '@/lib/config';
 import { getDriver } from '@/lib/driver';
 import { normalizeGpu, toZats, zecString } from '@/lib/format';
-import { derive, publicDemoForm, publicDemoRules } from '@/lib/request-form';
+import { derive, publicDemoBudget, publicDemoForm, publicDemoRules } from '@/lib/request-form';
 import { checkSpendCap, estimateCost, gpuOptions, providerMatches, sortedRfqs } from '@/lib/market';
 import { isPublicDemo, useSilicr } from '@/lib/store';
-import { Zec } from '../ui';
+import { Panel, Zec } from '../ui';
 import { MarketHeader } from './MarketHeader';
 import { NewRequestForm, type RequestFormState } from './NewRequestForm';
 import { ProviderTable, type ProviderRow } from './ProviderTable';
@@ -46,6 +46,8 @@ export function MarketView() {
   const presetsKey = JSON.stringify(buyerStatus?.presets ?? null) + JSON.stringify(buyerStatus?.publicDemoLimits ?? null);
   // presetsKey stands in for the status fields the rules are made of.
   const demoRules = useMemo(() => (publicDemo ? publicDemoRules(buyerStatus) : null), [publicDemo, presetsKey]);
+  // Mainnet demo: the cap and whether the wallet can still afford a request (status refreshes every few seconds).
+  const budget = publicDemo ? publicDemoBudget(buyerStatus) : null;
 
   const [form, setForm] = useState<RequestFormState>(DEFAULT_FORM);
   // Entering a public demo: adopt its first preset and limits once.
@@ -221,6 +223,9 @@ export function MarketView() {
           />
           <RequestList rfqs={rfqs} loading={!rfqsLoaded} offline={mode === 'real' && buyerConn.status !== 'online'} />
         </div>
+        {budget?.exhausted ? (
+          <DemoExhausted budget={budget} />
+        ) : (
         <NewRequestForm
           form={form}
           set={(key, value) => {
@@ -243,7 +248,33 @@ export function MarketView() {
           capCheck={capCheck}
           publicDemo={demoRules}
         />
+        )}
       </div>
     </div>
+  );
+}
+
+/** The public demo's shared wallet (or its cap) can no longer afford the cheapest preset: no form, a plain statement. */
+function DemoExhausted({ budget }: { budget: NonNullable<ReturnType<typeof publicDemoBudget>> }) {
+  const cap = budget.cap;
+  return (
+    <Panel title="Seal a request" subtitle={budget.mainnet ? 'Public mainnet demo' : 'Public testnet demo'} className="lg:sticky lg:top-[calc(var(--chrome-h,48px)+20px)]" id="demo-exhausted">
+      <div className="space-y-3 p-4 text-sm" role="status">
+        <p className={budget.mainnet ? 'font-semibold text-real' : 'font-semibold text-fg'}>
+          {budget.mainnet ? 'This mainnet demo has spent its budget.' : 'This demo has spent its budget.'}
+        </p>
+        {cap && (
+          <p className="font-mono text-xs tabular-nums text-muted">
+            spent {zecString(cap.spent, { maxDecimals: 5 })} of {zecString(cap.total, { maxDecimals: 5 })} ZEC · {zecString(cap.remaining, { maxDecimals: 5 })} ZEC left of the cap · per request ≤{' '}
+            {zecString(cap.perRfq, { maxDecimals: 5 })} ZEC
+          </p>
+        )}
+        <p className="text-xs text-muted">
+          The shared wallet, or what is left of its hard cap, is below what the cheapest example job could cost
+          {budget.minWorstCase !== null ? ` (${zecString(budget.minWorstCase, { maxDecimals: 5 })} ZEC at the max price, fees included)` : ''}. Past requests stay
+          readable in the Market and the Leak Inspector; run the stack yourself with <code className="font-mono text-fg">pnpm silicr demo</code> to make your own.
+        </p>
+      </div>
+    </Panel>
   );
 }

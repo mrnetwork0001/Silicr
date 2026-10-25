@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { StatusDto } from '@silicr/api';
 import type { RequestFormState } from '../components/market/NewRequestForm';
-import { derive, publicDemoForm, publicDemoRules } from '../lib/request-form';
+import { derive, publicDemoBudget, publicDemoForm, publicDemoRules } from '../lib/request-form';
 import { readDeal } from './fixtures/load';
 
 const FORM: RequestFormState = {
@@ -86,5 +86,35 @@ describe('the public demo price ceiling', () => {
     expect(derive(f, rules).errors.maxZec).toBeUndefined();
     expect(derive({ ...f, maxZec: '0.6' }, rules).errors.maxZec).toBe('At most 0.5 ZEC/h in the public demo');
     expect(publicDemoForm({ ...FORM, maxZec: '0.1' }, rules).maxZec).toBe('0.1');
+  });
+});
+
+describe('publicDemoBudget', () => {
+  const base = { role: 'buyer', height: 1, address: 'u1x', balance: { spendable: '1000000', pending: '0' }, relayUrl: 'r', version: '0', demoMode: true, blockTimeS: 75 } as const;
+  const limits = { maxDurationS: 900, maxCount: 1, maxActive: 1, perIpPerHour: 3, maxPricePerHourZats: '100000' };
+
+  it('is null outside a public demo', () => {
+    expect(publicDemoBudget(null)).toBeNull();
+    expect(publicDemoBudget({ ...base, network: 'main', spendCap: { perRfqZats: '1', totalZats: '2', spentZats: '0' } } as StatusDto)).toBeNull();
+  });
+
+  it('reads the mainnet flag, the cap (spent, remaining, per request), the cheapest worst case and demoExhausted', () => {
+    const s: StatusDto = {
+      ...base,
+      network: 'main',
+      publicDemo: true,
+      publicDemoLimits: { ...limits, allowMainnet: true, minWorstCaseZats: '41667' },
+      spendCap: { perRfqZats: '100000', totalZats: '500000', spentZats: '120000' },
+      demoExhausted: false,
+    };
+    expect(publicDemoBudget(s)).toEqual({ mainnet: true, exhausted: false, cap: { spent: 120_000n, total: 500_000n, remaining: 380_000n, perRfq: 100_000n }, minWorstCase: 41_667n });
+    expect(publicDemoBudget({ ...s, demoExhausted: true })?.exhausted).toBe(true);
+    // Overspent (fees after the last gate): remaining never goes negative.
+    expect(publicDemoBudget({ ...s, spendCap: { perRfqZats: '100000', totalZats: '500000', spentZats: '600000' } })?.cap?.remaining).toBe(0n);
+  });
+
+  it('a testnet demo without a cap: not mainnet, no cap, exhausted only when the daemon says so', () => {
+    const s: StatusDto = { ...base, network: 'test', publicDemo: true, publicDemoLimits: limits };
+    expect(publicDemoBudget(s)).toEqual({ mainnet: false, exhausted: false, cap: null, minWorstCase: null });
   });
 });
