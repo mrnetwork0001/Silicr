@@ -63,13 +63,18 @@ pnpm --filter @silicr/web dev       # the terminal on http://localhost:7703 (pre
 
 `silicr demo` (same as `silicr demo --network test`) opens the funded testnet wallets in `.silicr/wallets/test-buyer` and `.silicr/wallets/test-provider` (create them with `silicr init --network test` and fund them from a faucet), starts the relay and both daemons, and runs one deal with [examples/tiny-train](examples/tiny-train/README.md). `--network main` is refused for the demo: real money. Testnet blocks arrive about every 25 s since NU7 (mainnet activates NU7 at height 3,543,405, about Nov 3, 2026). The web terminal needs a running daemon: without one it shows how to start it on testnet or mainnet.
 
-## Public testnet demo
+## Public demos
 
-A hosted testnet stack runs at **https://app.silicr.38-49-213-208.sslip.io** (the daemons are proxied under `/api/buyer/`, `/api/provider/` and `/api/relay/`). It is a shared wallet with testnet coins only. A daemon serves it with:
+- **Landing page:** https://silicr.xyz
+- **Testnet demo:** https://app.silicr.xyz (a shared wallet with testnet coins only; the daemons are proxied under `/api/buyer/`, `/api/provider/` and `/api/relay/`).
+- **Mainnet demo, real ZEC:** https://mainnet.silicr.xyz (a tiny shared wallet, hard-capped: 0.001 ZEC per request and 0.005 ZEC in all, fees included; max price 0.001 ZEC/h; the page says "This mainnet demo has spent its budget" once it has).
+
+The old names https://silicr.38-49-213-208.sslip.io and https://app.silicr.38-49-213-208.sslip.io still work as aliases. A daemon serves a public demo with:
 
 | Flag | What it does |
 |---|---|
-| `--public-demo` | Refused on mainnet. `POST /api/rfqs` takes only `job: { preset: 'tiny-train' \| 'tiny-train-quick' }`, mapped to server-side example jobs (client paths, commands, images and env are ignored); `durationS` ≤ 900 s, `count` ≤ 1 and a max price ≤ 0.5 ZEC/h; one live request at a time (409 `busy`); 3 requests per IP per hour (429 `rate_limited`). Withdraw, `PUT /api/policy`, `POST /api/jobs/:id/stop` and migrate return 403 `demo_disabled`. Faults stay enabled: they are part of the demo. `GET /api/status` reports `publicDemo: true` and the presets. |
+| `--public-demo` | Refused on mainnet without `--allow-mainnet`. `POST /api/rfqs` takes only `job: { preset: 'tiny-train' \| 'tiny-train-quick' }`, mapped to server-side example jobs (client paths, commands, images and env are ignored); `durationS` ≤ 900 s, `count` ≤ 1 and a max price ≤ 0.5 ZEC/h; one live request at a time (409 `busy`); 3 requests per IP per hour (429 `rate_limited`). Withdraw, `PUT /api/policy`, `POST /api/jobs/:id/stop` and migrate return 403 `demo_disabled`. Faults stay enabled: they are part of the demo. `GET /api/status` reports `publicDemo: true` and the presets. |
+| `--allow-mainnet` | With `--public-demo` on `--network main`: real ZEC from a tiny shared wallet. The spend caps are required and enforced as a hard ceiling on every request's worst case (payments at the max price plus fees; 400 `spend_cap`), the max price is capped at 0.001 ZEC/h and durations at 15 min; `GET /api/status` adds `publicDemoLimits.allowMainnet`, `publicDemoLimits.minWorstCaseZats` and `demoExhausted` (the wallet or the cap can no longer afford the cheapest preset). The provider asks 0.0005 ZEC/h and bids only while it holds ≥ 0.0003 ZEC for fees (`bidding` in its status). |
 | `--public-origin <url>` | Repeatable. An extra allowed Origin for CORS and an accepted `Host` (the URL's host name); the loopback rules stay as they are. |
 | `--trust-proxy` | Take the client IP for rate limits from `X-Forwarded-For` (only behind your own reverse proxy). |
 | `--host <addr>` | Bind address; anything other than loopback only together with `--public-origin`. |
