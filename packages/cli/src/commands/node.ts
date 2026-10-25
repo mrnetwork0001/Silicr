@@ -1,7 +1,7 @@
 // `silicr init`, `silicr daemon` and `silicr relay`: set up and run one party.
 import { existsSync } from 'node:fs';
 import { basename, join, resolve } from 'node:path';
-import { BuyerNode, ProviderNode, aliasFor, defaultProfile, maxExposureIntervals, parseZec, payLeadFor, startDaemon, type NodeBase, type SpendCap } from '@silicr/engine';
+import { BuyerNode, ProviderNode, PUBLIC_DEMO_DEFAULTS, PUBLIC_DEMO_INTERVAL_S, aliasFor, defaultProfile, maxExposureIntervals, parseZec, payLeadFor, startDaemon, type NodeBase, type SpendCap } from '@silicr/engine';
 import { generateSigner, signerFromSecret } from '@silicr/protocol';
 import { parseProxyUrl, relayClient, startRelay } from '@silicr/relay';
 import { createRunner } from '@silicr/runner';
@@ -384,6 +384,8 @@ export async function daemon(o: DaemonCmdOptions): Promise<void> {
     blobTransport,
     runner: (o.runner ?? cfg?.runner ?? 'auto') as 'auto' | 'process' | 'docker',
     demoMode: !!o.demoMode,
+    // Public demo provider: 60 s intervals, so a judge sees a PAY train (several txids) inside one short job.
+    ...(o.publicDemo && role === 'provider' ? { policy: { intervalS: PUBLIC_DEMO_INTERVAL_S } } : {}),
     daemon: {
       ...(o.host ? { host: o.host } : {}),
       ...(publicOrigins.length ? { publicOrigins } : {}),
@@ -406,13 +408,14 @@ export async function daemon(o: DaemonCmdOptions): Promise<void> {
   ];
   if (spendCap || network === 'main') rows.push(capRow(spendCap));
   if (o.publicDemo) {
-    rows.push(['public demo', `${pc.yellow('on')} ${pc.dim('presets only (examples/tiny-train) · ≤ 15 min · 1 GPU · one live request · 3 requests per IP per hour · withdraw, policy, migrate and provider stop disabled')}`]);
+    rows.push(['public demo', `${pc.yellow('on')} ${pc.dim(`presets only (examples/tiny-train) · ≤ 15 min · 1 GPU · one live request · 3 requests per IP per hour · unaccepted requests expire after ${PUBLIC_DEMO_DEFAULTS.acceptWindowBlocks} blocks · withdraw, policy, migrate and provider stop disabled`)}`]);
   }
   if (publicOrigins.length) rows.push(['origins', `${publicOrigins.join(', ')} ${pc.dim(o.trustProxy ? '(X-Forwarded-For trusted for rate limits)' : '')}`]);
   if (network !== 'memory') {
+    const intervalS = node instanceof ProviderNode ? node.getPolicy().intervalS : profile.intervalS;
     rows.push([
       'timing',
-      `${profile.intervalS} s intervals · PAY ${payLeadFor(profile, profile.intervalS)} s ahead · at most ${+maxExposureIntervals(profile).toFixed(3)} intervals at risk · ~${s.blockTimeS} s blocks`,
+      `${intervalS} s intervals · PAY ${payLeadFor(profile, intervalS)} s ahead · at most ${+maxExposureIntervals(profile, intervalS).toFixed(3)} intervals at risk · ~${s.blockTimeS} s blocks`,
     ]);
   }
   if (node instanceof ProviderNode) {

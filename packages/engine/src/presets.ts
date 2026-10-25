@@ -33,7 +33,20 @@ export const DEFAULT_PRESETS: JobPreset[] = [
     path: `${EXAMPLES_DIR}tiny-train`,
     env: { SILICR_STEPS: '60', SILICR_STEP_DELAY_MS: '30' },
   },
+  {
+    id: 'tiny-train-long',
+    title: 'Long training run',
+    description: 'examples/tiny-train with 2000 steps (~8 min): long enough to watch several interval payments land on chain and to try the "stop paying" fault and the watchdog.',
+    command: ['python3', 'train.py'],
+    gpu: 'a100',
+    durationS: 900,
+    path: `${EXAMPLES_DIR}tiny-train`,
+    env: { SILICR_STEPS: '2000', SILICR_STEP_DELAY_MS: '250' },
+  },
 ];
+
+/** Provider interval in the public demo: short enough that a ~8 min job shows several PAY transactions (the testnet profile's 300 s would show one). */
+export const PUBLIC_DEMO_INTERVAL_S = 60;
 
 /** What a client sees: no paths, no env. */
 export function presetDto(p: JobPreset): JobPresetDto {

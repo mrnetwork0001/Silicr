@@ -13,7 +13,7 @@ export { DirectoryClient, matchProviders } from './directory.ts';
 export type { VerifiedProvider, DirectoryListing } from './directory.ts';
 export { MEMORY_PROFILE, FAST_PROFILE, TESTNET_PROFILE, MAINNET_PROFILE, MAINNET_NU7_HEIGHT, PROFILES, defaultProfile, profileAtHeight, withOverrides, payLeadFor, maxExposureIntervals, payMiningWindowS } from './profile.ts';
 export { checkJobPath, SENSITIVE_HOME_DIRS } from './jobpath.ts';
-export { DEFAULT_PRESETS, EXAMPLES_DIR, presetDto } from './presets.ts';
+export { DEFAULT_PRESETS, EXAMPLES_DIR, PUBLIC_DEMO_INTERVAL_S, presetDto } from './presets.ts';
 export type { JobPreset } from './presets.ts';
 export type { TimingProfile } from './profile.ts';
 export { LeakRecorder, chainFields, publicTxViewDto, shieldedBundle, FACTS_BY_LABEL, TX_FACTS } from './leaks.ts';
