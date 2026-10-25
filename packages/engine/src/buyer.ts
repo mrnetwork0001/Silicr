@@ -33,6 +33,8 @@ const MAX_BUNDLE_BYTES = MAX_PAYLOAD_BYTES - 64 * 1024;
 export const GPU_SLUG = /^[a-z0-9][a-z0-9-]{0,15}$/;
 const HEARTBEATS_KEPT = 50;
 const LOG_LINES_KEPT = 500;
+/** How long noHeartbeat() looks at the relay for a result that is already there. */
+const PROBE_MS = 300;
 /** Largest checkpoint a buyer accepts from the relay (the provider's default cap is the same). */
 export const DEFAULT_MAX_CHECKPOINT_BYTES = 64 * 1024 * 1024;
 
@@ -119,6 +121,11 @@ export interface BuyerRfq {
   result?: { digest: string; sizeBytes: number; file: string; verified?: boolean };
   providerClose?: { reason: CloseReason; finalSeq: number; resultDigest?: string; txid: string };
   closeSent?: { reason: CloseReason; txid: string };
+  /**
+   * A CLOSE that could not be broadcast (chain unreachable): retried with backoff until it goes
+   * out or the provider's own CLOSE arrives. Persisted, so a restart keeps the intent.
+   */
+  closeRetry?: { reason: CloseReason; attempts: number; nextAt: number; lastError: string };
   closeReason?: CloseReason;
   closingSince?: number;
   error?: string;
@@ -167,6 +174,8 @@ export type BuyerRfqDto = RfqDto & {
    * leadS/2 before it starts (random point), so at most maxExposureIntervals are ever at risk.
    */
   payPolicy?: { leadS: number; jitterMaxS: number; maxExposureIntervals: number };
+  /** Our CLOSE has not gone out yet (chain unreachable); it is retried at nextAt. */
+  closePending?: { reason: CloseReason; attempts: number; nextAt: number };
 };
 
 interface Runtime {
@@ -294,6 +303,8 @@ export class BuyerNode extends NodeBase {
       delete r.payInFlight;
     }
     if (r.ambiguousPay) r.ambiguousPay.since = Date.now();
+    if (r.closeRetry && !r.closeSent && !r.providerClose) r.closeRetry.nextAt = Date.now() + 1000; // the timer retries it
+    else delete r.closeRetry;
     if (r.accepted && ACTIVE.includes(r.state)) {
       runtime.channel = this.deps.protocol.deriveChannel(keys.eph.secretKey, unhex(r.accepted.providerEph), unhex(r.rfqId));
       if (this.blobTransport === 'memo') this.memo.register(r.rfqId, runtime.channel, { to: r.accepted.payTo, signer: keys.signer });
@@ -775,9 +786,32 @@ export class BuyerNode extends NodeBase {
     ], { rfqId: r.rfqId, txid: e.note.txid });
     void this.observeTx(e.note.txid, { rfqId: r.rfqId, event: 'tx-received', summary: 'Provider CLOSE transaction: what the public chain shows', sealed: TX_FACTS.providerClose });
     if (r.result && r.providerClose.resultDigest) this.checkDigest(r);
+    // The provider has ended the deal on its side: a CLOSE of ours still waiting for the chain
+    // would only acknowledge what it already knows.
+    if (r.closeRetry && !r.closeSent) {
+      delete r.closeRetry;
+      if (r.error?.startsWith('CLOSE failed')) delete r.error;
+    }
+    if (r.state === 'closed') {
+      // Late: we closed for silence (no_heartbeat) while the provider finished and could not reach
+      // the chain. Its signed CLOSE says how the deal really ended; its result, if any, is still owed.
+      // (An 'unpaid' or 'provider_stop' CLOSE only says what happened after we stopped paying.)
+      if (r.closeReason === 'no_heartbeat' && (c.reason === 'done' || c.reason === 'error')) {
+        r.closeReason = c.reason;
+        this.recordText('buyer', 'watchdog', `Late CLOSE from the provider: the deal ended '${c.reason}', not for missing heartbeats`, [
+          ['Reason', c.reason, true, false],
+          ['Earlier verdict', 'no_heartbeat (heartbeats stopped reaching this buyer)', true, false],
+        ], { rfqId: r.rfqId });
+      }
+      if (r.providerClose.resultDigest && !r.result) void this.fetchResult(r, { probe: true, late: true });
+      this.changed(r);
+      return;
+    }
     // Unless the buyer itself ended the deal, the provider's CLOSE says why it ended
-    // (our own CLOSE after fetching a result is only an acknowledgment).
+    // (our own CLOSE after fetching a result is only an acknowledgment). A provider that reports
+    // the job done or failed while we are still deciding about its silence finished the job.
     if (!buyerInitiated(r)) r.closeReason = c.reason;
+    else if (r.closeReason === 'no_heartbeat' && !r.closeSent && (c.reason === 'done' || c.reason === 'error')) r.closeReason = c.reason;
     this.enterClosing(r, c.reason);
     if (r.providerClose.resultDigest && !r.result) void this.fetchResult(r);
     this.changed(r);
@@ -810,12 +844,13 @@ export class BuyerNode extends NodeBase {
     }
   }
 
-  /** Fast timer: heartbeat timeouts and closing deadlines. */
+  /** Fast timer: heartbeat timeouts, closing deadlines and CLOSE retries. */
   private async timerTick(): Promise<void> {
     if (this.stopped) return;
     const now = Date.now();
     for (const r of this.rfqs.values()) {
       if (!r.accepted) continue;
+      if (r.closeRetry && !r.closeSent && now >= r.closeRetry.nextAt && !this.runtime(r).closingTx) void this.sendClose(r, r.closeRetry.reason);
       if (r.state === 'accepted' || r.state === 'running') {
         // The job must be reported running by its start deadline ('starting' heartbeats don't count),
         // and after that heartbeats must keep coming.
@@ -1286,33 +1321,41 @@ export class BuyerNode extends NodeBase {
 
   // ------------------------------------------------------------------ results & close
 
-  private async fetchResult(r: BuyerRfq): Promise<void> {
+  /**
+   * Fetch, decrypt and keep the result, then acknowledge with CLOSE. Returns whether a result is
+   * now held. `probe`: look only briefly (is a result already there?) and report nothing if not.
+   * `late`: the deal is already closed; take the result without sending another CLOSE.
+   */
+  private async fetchResult(r: BuyerRfq, opts: { probe?: boolean; late?: boolean } = {}): Promise<boolean> {
     const rt = this.runtime(r);
-    if (r.result || rt.fetchingResult || !rt.channel) return;
+    if (r.result) return true;
+    if (rt.fetchingResult || !rt.channel) return false;
     rt.fetchingResult = true;
     const ch = rt.channel;
     try {
-      const waiting = () => !this.stopped && (r.state === 'closing' || r.state === 'running' || r.state === 'accepted');
+      const waiting = () => !this.stopped && (r.state === 'closing' || r.state === 'running' || r.state === 'accepted' || (opts.late === true && r.state === 'closed'));
+      // A probe reads what the relay holds right now (no long poll) for about a second.
+      const windowMs = opts.probe ? PROBE_MS : this.profile.closeWaitS * 1000;
       let got: Awaited<ReturnType<typeof readChunked>>;
       try {
         got = await readChunked(this.relay, ch, 'result', this.deps.protocol.sha256, {
-          waitS: this.profile.relayWaitS,
-          deadline: Date.now() + this.profile.closeWaitS * 1000,
+          waitS: opts.probe ? 0 : this.profile.relayWaitS,
+          deadline: Date.now() + windowMs,
           live: waiting,
           idleMs: Math.min(250, this.profile.pollMs),
           maxBytes: this.maxResultBytes,
         });
       } catch (e) {
         this.fail(r, `result refused: ${errMsg(e)}`);
-        return;
+        return false;
       }
       if (!got) {
-        if (waiting()) {
+        if (!opts.probe && waiting()) {
           r.error = this.memo.isMemo(r.rfqId) ? 'result never arrived in memos' : 'result never appeared on the relay';
           this.changed(r);
           this.settle(r);
         }
-        return;
+        return false;
       }
       const digest = hex(got.sealedDigest);
       const tar = got.payload;
@@ -1325,10 +1368,11 @@ export class BuyerNode extends NodeBase {
         ['Saved to', file, true, false],
       ], { rfqId: r.rfqId });
       if (r.providerClose?.resultDigest) this.checkDigest(r);
-      if (r.state === 'failed') return;
-      if (!r.closeSent) await this.sendClose(r, r.providerClose?.reason ?? (r.sawFinal === 'failed' ? 'error' : 'done'));
+      if (r.state === 'failed') return true;
+      if (!r.closeSent && !opts.late) await this.sendClose(r, r.providerClose?.reason ?? (r.sawFinal === 'failed' ? 'error' : 'done'));
       this.changed(r);
       this.settle(r);
+      return true;
     } finally {
       rt.fetchingResult = false;
     }
@@ -1354,13 +1398,27 @@ export class BuyerNode extends NodeBase {
       r.closeSent = { reason, txid: res.txid };
       if (r.closeReason === undefined) r.closeReason = reason;
       r.feesZats += res.feeZats + this.minOutput;
-      this.recordText('buyer', 'tx-broadcast', `CLOSE sent: ${reason}`, [
+      const retried = r.closeRetry?.attempts ?? 0;
+      delete r.closeRetry;
+      if (r.error?.startsWith('CLOSE failed')) delete r.error;
+      this.recordText('buyer', 'tx-broadcast', `CLOSE sent: ${reason}${retried ? ` (after ${retried} failed attempt${retried === 1 ? '' : 's'})` : ''}`, [
         ['Reason', reason, true, false],
         ['Last interval paid', String(finalSeq), true, false],
         ['Total paid to provider', `${formatZec(r.spentZats)} ZEC`, true, true],
       ], { rfqId: r.rfqId, txid: res.txid });
     } catch (e) {
-      r.error = `CLOSE failed: ${errMsg(e)}`;
+      // The chain is unreachable (or the wallet short): keep the intent and retry with backoff.
+      // Payments have stopped regardless; the provider's watchdog handles its side.
+      const attempts = (r.closeRetry?.attempts ?? 0) + 1;
+      const wait = closeRetryDelayMs(attempts, this.profile.pollMs);
+      r.closeRetry = { reason, attempts, nextAt: Date.now() + wait, lastError: errMsg(e) };
+      r.error = `CLOSE failed: ${errMsg(e)} (attempt ${attempts}; retrying in ${Math.round(wait / 1000)} s)`;
+      if (attempts === 1) {
+        this.recordText('buyer', 'watchdog', `CLOSE (${reason}) could not be broadcast; it is kept and retried until the chain is reachable`, [
+          ['Error', errMsg(e), true, false],
+          ['Next attempt', `in ${Math.round(wait / 1000)} s, then doubling up to ${CLOSE_RETRY_MAX_MS / 1000} s`, true, false],
+        ], { rfqId: r.rfqId });
+      }
     } finally {
       rt.closingTx = false;
     }
@@ -1405,17 +1463,38 @@ export class BuyerNode extends NodeBase {
     this.changed(r);
   }
 
+  /**
+   * Heartbeats stopped. Payments stop at once (state 'closing'). Before blaming the provider, look
+   * at the relay once: a result already sitting there means the job finished and only the
+   * heartbeats or the chain failed, so it is fetched, verified and the deal closes 'done'.
+   */
   private async noHeartbeat(r: BuyerRfq): Promise<void> {
     if (r.state !== 'accepted' && r.state !== 'running') return;
     r.state = 'closing';
+    // The verdict unless the relay or the provider's own CLOSE shows the job finished: a provider
+    // that merely stops for lack of payment during the look does not change it.
     r.closeReason = 'no_heartbeat';
     r.closingSince = Date.now();
-    this.recordText('buyer', 'watchdog', 'Provider heartbeats stopped: payments stopped and the job is being closed', [
+    this.recordText('buyer', 'watchdog', 'Provider heartbeats stopped: payments stopped; checking the relay for a result before closing', [
       ['Last heartbeat', r.lastHeartbeatAt ? new Date(r.lastHeartbeatAt).toISOString() : 'never', true, false],
       ['Timeout', `${this.profile.heartbeatTimeoutS} s`, true, false],
     ], { rfqId: r.rfqId });
     this.changed(r);
-    await this.sendClose(r, 'no_heartbeat');
+    const found = await this.fetchResult(r, { probe: true });
+    if (found) {
+      // fetchResult sent CLOSE(done|error) (or kept it for retry) and settle() waits for the provider's CLOSE (digest).
+      r.closeReason = r.closeSent?.reason ?? r.closeRetry?.reason ?? (r.sawFinal === 'failed' ? 'error' : 'done');
+      this.recordText('buyer', 'watchdog', 'The result was already on the relay: the job had finished; closing as done', [
+        ['Result', `${r.result?.sizeBytes ?? 0} bytes, sha256 ${shortHex(r.result?.digest ?? '')}`, true, false],
+      ], { rfqId: r.rfqId });
+      this.changed(r);
+      this.settle(r);
+      return;
+    }
+    if (r.state !== 'closing') return; // the provider's CLOSE or a failure got there first
+    // A provider CLOSE(done|error) that landed during the look already changed the verdict.
+    const pc = r.providerClose?.reason;
+    await this.sendClose(r, pc === 'done' || pc === 'error' ? pc : 'no_heartbeat');
     this.finish(r, 'closed');
   }
 
@@ -1550,6 +1629,7 @@ export class BuyerNode extends NodeBase {
     }
     if (r.closeReason) out.closeReason = r.closeReason;
     if (r.error) out.error = r.error;
+    if (r.closeRetry && !r.closeSent) out.closePending = { reason: r.closeRetry.reason, attempts: r.closeRetry.attempts, nextAt: r.closeRetry.nextAt };
     if (r.preparing) out.preparing = { ...r.preparing };
     if (r.jobStart !== undefined) out.jobStartedAt = r.jobStart;
     if (r.checkpoint) out.checkpoint = { seq: r.checkpoint.seq, digest: r.checkpoint.digest, sizeBytes: r.checkpoint.sizeBytes, at: r.checkpoint.at };
@@ -1578,7 +1658,16 @@ export class BuyerNode extends NodeBase {
 /** Errors that are certainly raised before anything is broadcast, so a retry can't pay twice. */
 function notBroadcast(e: unknown): boolean {
   if (!(e instanceof Error)) return false;
-  return ['InsufficientFundsError', 'PrivacyError', 'RangeError', 'TypeError', 'ProtocolError'].includes(e.name) || e.message === 'node is shutting down';
+  if (['InsufficientFundsError', 'PrivacyError', 'RangeError', 'TypeError', 'ProtocolError'].includes(e.name)) return true;
+  // The sidecar refuses to build a transaction without a fresh sync; nothing was signed or sent.
+  return e.message === 'node is shutting down' || /sync before send failed/.test(e.message);
+}
+
+/** CLOSE retry backoff: doubling from a couple of seconds (scaled to the profile) up to 5 minutes. */
+export const CLOSE_RETRY_MAX_MS = 300_000;
+export function closeRetryDelayMs(attempts: number, pollMs: number): number {
+  const base = Math.max(2000, pollMs * 4);
+  return Math.min(CLOSE_RETRY_MAX_MS, base * 2 ** Math.min(10, Math.max(0, attempts - 1)));
 }
 
 function payAmount(price: bigint, minOut: bigint): bigint {

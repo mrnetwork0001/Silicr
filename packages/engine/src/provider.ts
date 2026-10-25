@@ -6,7 +6,7 @@ import type { CloseReason, GpuSpec, PaymentDto, ProviderJobDto, ProviderJobState
 import type { Accept, Bid, Channel, Close, DecodedMemo, Heartbeat, Pay, Rfq, Signer } from '@silicr/protocol';
 import type { JobExit, RunHandle, Runner } from '@silicr/runner';
 import { NodeBase, type NodeOptions } from './base.ts';
-import { GPU_SLUG } from './buyer.ts';
+import { GPU_SLUG, closeRetryDelayMs, CLOSE_RETRY_MAX_MS } from './buyer.ts';
 import { NoteWatcher, type NoteEvent, describeError } from './chain.ts';
 import { aliasFor } from './alias.ts';
 import { profileAtHeight } from './profile.ts';
@@ -89,6 +89,11 @@ export interface ProviderJob {
   manifest?: { command: string[]; image?: string; bundleSize: number; bundleSha256: string };
   resultDigest?: string;
   closeTxid?: string;
+  /**
+   * Our CLOSE could not be broadcast (chain unreachable): kept and retried with backoff until it
+   * goes out. Persisted, so a restart keeps the intent. The digest is the result's, when there is one.
+   */
+  closeRetry?: { reason: CloseReason; digest?: string; attempts: number; nextAt: number; lastError: string };
   error?: string;
   heartbeatsStopped?: boolean;
   feesZats: bigint;
@@ -106,6 +111,8 @@ export type ProviderJobDtoExt = ProviderJobDto & {
   /** Fault injection: heartbeats deliberately withheld. */
   heartbeatsStopped: boolean;
   feesZats: string;
+  /** Our CLOSE has not gone out yet (chain unreachable); it is retried at nextAt. */
+  closePending?: { reason: CloseReason; attempts: number; nextAt: number };
   /** `unconfirmedSeq`: the interval being served on a payment that isn't mined yet (it must be by deadlineAt). */
   watchdog?: NonNullable<ProviderJobDto['watchdog']> & { unconfirmedSeq?: number };
 };
@@ -121,6 +128,8 @@ type FinishCause =
 interface JobRuntime {
   channel: Channel | null;
   handle: RunHandle | null;
+  /** A CLOSE broadcast is in flight. */
+  closingTx: boolean;
   hbTimer: NodeJS.Timeout | null;
   hbMutex: Mutex;
   pendingLogs: string[];
@@ -247,7 +256,11 @@ export class ProviderNode extends NodeBase {
         j.state = 'stopped';
         j.stopReason = 'error';
         j.stoppedAt = Date.now();
-        void this.sendClose(j, 'error', undefined).catch(() => undefined);
+        void this.sendCloseRetrying(j, 'error', undefined);
+      } else if (j.closeRetry && !j.closeTxid) {
+        j.closeRetry.nextAt = Date.now() + 1000; // the watchdog timer retries it
+      } else {
+        delete j.closeRetry;
       }
     }
     await mkdir(this.workDir, { recursive: true, mode: 0o700 });
@@ -872,6 +885,8 @@ export class ProviderNode extends NodeBase {
     if (this.stopped) return;
     const now = Date.now();
     for (const job of this.jobs.values()) {
+      const cr = job.closeRetry;
+      if (cr && !job.closeTxid && now >= cr.nextAt && !this.runtime(job).closingTx) void this.sendCloseRetrying(job, cr.reason, cr.digest ? unhex(cr.digest) : undefined);
       if (job.state !== 'running' && job.state !== 'paused') continue;
       const rt = this.runtime(job);
       if (!rt.handle || rt.finishing || rt.watchdogBusy || job.intervals === undefined) continue;
@@ -1073,11 +1088,7 @@ export class ProviderNode extends NodeBase {
         ], { rfqId: job.rfqId });
       }
       this.changed(job);
-      try {
-        await this.sendClose(job, reason, digest);
-      } catch (e) {
-        job.error = `CLOSE failed: ${errMsg(e)}`;
-      }
+      await this.sendCloseRetrying(job, reason, digest);
       this.changed(job);
     } finally {
       await rt.handle?.cleanup?.().catch(() => undefined);
@@ -1128,6 +1139,38 @@ export class ProviderNode extends NodeBase {
         this.log(`checkpoint upload: ${errMsg(e)}`);
       }
     });
+  }
+
+  /**
+   * CLOSE, kept and retried with backoff when the chain is unreachable: the buyer needs it (and
+   * the result digest it carries) to verify the result and close on its side.
+   */
+  private async sendCloseRetrying(job: ProviderJob, reason: CloseReason, digest: Uint8Array | undefined): Promise<void> {
+    const rt = this.runtime(job);
+    if (job.closeTxid || rt.closingTx || this.stopped) return;
+    rt.closingTx = true;
+    try {
+      await this.sendClose(job, reason, digest);
+      const retried = job.closeRetry?.attempts ?? 0;
+      delete job.closeRetry;
+      if (job.error?.startsWith('CLOSE failed')) delete job.error;
+      if (retried) this.log(`CLOSE (${reason}) for ${shortHex(job.rfqId)} went out after ${retried} failed attempt(s)`);
+    } catch (e) {
+      const attempts = (job.closeRetry?.attempts ?? 0) + 1;
+      const wait = closeRetryDelayMs(attempts, this.profile.pollMs);
+      job.closeRetry = { reason, attempts, nextAt: Date.now() + wait, lastError: errMsg(e) };
+      if (digest) job.closeRetry.digest = hex(digest);
+      job.error = `CLOSE failed: ${errMsg(e)} (attempt ${attempts}; retrying in ${Math.round(wait / 1000)} s)`;
+      if (attempts === 1) {
+        this.recordText('provider', 'watchdog', `CLOSE (${reason}) could not be broadcast; it is kept and retried until the chain is reachable`, [
+          ['Error', errMsg(e), true, false],
+          ['Next attempt', `in ${Math.round(wait / 1000)} s, then doubling up to ${CLOSE_RETRY_MAX_MS / 1000} s`, true, false],
+        ], { rfqId: job.rfqId });
+      }
+    } finally {
+      rt.closingTx = false;
+    }
+    this.changed(job);
   }
 
   private async sendClose(job: ProviderJob, reason: CloseReason, digest: Uint8Array | undefined): Promise<void> {
@@ -1197,6 +1240,7 @@ export class ProviderNode extends NodeBase {
     if (j.intervals !== undefined) d.intervals = j.intervals;
     if (j.resultDigest !== undefined) d.resultDigest = j.resultDigest;
     if (j.error !== undefined) d.error = j.error;
+    if (j.closeRetry && !j.closeTxid) d.closePending = { reason: j.closeRetry.reason, attempts: j.closeRetry.attempts, nextAt: j.closeRetry.nextAt };
     if (j.checkpoint !== undefined) d.checkpoint = { ...j.checkpoint };
     if (j.resumedFromSeq !== undefined) d.resumedFromSeq = j.resumedFromSeq;
     const wd = this.watchdogView(j);
@@ -1228,6 +1272,7 @@ function newRuntime(): JobRuntime {
   return {
     channel: null,
     handle: null,
+    closingTx: false,
     hbTimer: null,
     hbMutex: new Mutex(),
     pendingLogs: [],

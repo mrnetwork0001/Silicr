@@ -59,6 +59,8 @@ export class FakeRelay implements RelayClient {
   private waiters = new Set<() => void>();
   /** Everything the relay was ever handed, for privacy assertions. */
   readonly stored: { mailbox: string; data: Uint8Array }[] = [];
+  /** Tests: a reader that does not see a mailbox (returns false) gets nothing from it, as if blind. */
+  readFilter: ((mailbox: string) => boolean) | undefined;
 
   async append(mailbox: string, data: Uint8Array): Promise<number> {
     if (!/^[0-9a-f]{32}$/.test(mailbox)) throw new Error('bad mailbox');
@@ -74,6 +76,10 @@ export class FakeRelay implements RelayClient {
   async read(mailbox: string, afterSeq: number, waitS = 0): Promise<{ seq: number; data: Uint8Array }[]> {
     const deadline = Date.now() + waitS * 1000;
     for (;;) {
+      if (this.readFilter && !this.readFilter(mailbox)) {
+        await new Promise((r) => setTimeout(r, Math.min(50, Math.max(0, deadline - Date.now()))));
+        return [];
+      }
       const box = this.boxes.get(mailbox) ?? [];
       const out = box.slice(afterSeq).map((data, i) => ({ seq: afterSeq + i + 1, data: new Uint8Array(data) }));
       const remaining = deadline - Date.now();
@@ -286,6 +292,55 @@ export function recordingBackend(inner: ZecBackend): ZecBackend & { sends: Outpu
   return wrapped;
 }
 
+/** A light-wallet-server outage to switch on and off: chain calls hang `hangMs`, then fail. */
+export interface Outage {
+  on: boolean;
+  /** How long each failing call hangs before it throws (a stuck gRPC call, not a quick refusal). */
+  hangMs: number;
+  /** Chain calls that failed while the outage was on. */
+  failures: number;
+}
+
+export function outage(hangMs = 200): Outage {
+  return { on: false, hangMs, failures: 0 };
+}
+
+/**
+ * Wraps a backend so that, while `o.on`, every call that needs the light-wallet server (height,
+ * poll, balance, send, newAddress) hangs and then throws a transport error, the way the sidecar's
+ * gRPC calls did on 2026-10-24. inspectTx stays local, as in the real sidecar.
+ */
+export function outageBackend(inner: ZecBackend, o: Outage): ZecBackend {
+  const wrapped = Object.create(inner) as ZecBackend;
+  const gate = async (what: string) => {
+    if (!o.on) return;
+    await new Promise((r) => setTimeout(r, o.hangMs));
+    o.failures += 1;
+    throw new Error(`${what}: GetLatestBlock: code: 'Unknown error', message: "transport error", source: ConnectionReset (simulated outage)`);
+  };
+  wrapped.height = async () => {
+    await gate('height');
+    return inner.height();
+  };
+  wrapped.poll = async (since: number) => {
+    await gate('poll');
+    return inner.poll(since);
+  };
+  wrapped.balance = async () => {
+    await gate('balance');
+    return inner.balance();
+  };
+  wrapped.newAddress = async () => {
+    await gate('newAddress');
+    return inner.newAddress();
+  };
+  wrapped.send = async (outputs: Output[]) => {
+    await gate('send: sync before send failed');
+    return inner.send(outputs);
+  };
+  return wrapped;
+}
+
 export interface WorldProvider {
   name: string;
   policy?: Partial<ProviderPolicy>;
@@ -313,6 +368,8 @@ export async function makeWorld(o: {
   blockTimeMs?: number;
   buyerFund?: bigint;
   buyerOpts?: { maxResultBytes?: number; homeDir?: string; spendCap?: SpendCap };
+  /** Wrap the buyer's wallet backend (e.g. outageBackend); recording is applied on top. */
+  buyerWrapBackend?: (inner: ZecBackend) => ZecBackend;
 } = {}): Promise<World> {
   const root = await tempDir();
   const profile = withOverrides(TEST_PROFILE, o.profile ?? {});
@@ -339,7 +396,8 @@ export async function makeWorld(o: {
     providers.push(node);
     runners.push(runner);
   }
-  const buyerBackend = recordingBackend(network.wallet('buyer', { fundZats: o.buyerFund ?? 1_000_000_000n }));
+  const buyerWallet = network.wallet('buyer', { fundZats: o.buyerFund ?? 1_000_000_000n });
+  const buyerBackend = recordingBackend(o.buyerWrapBackend ? o.buyerWrapBackend(buyerWallet) : buyerWallet);
   const buyer = new BuyerNode({ backend: buyerBackend, relay, dataDir: join(root, 'buyer'), profile, deps, ...(o.buyerOpts ?? {}) });
   await buyer.start();
   const jobDir = join(root, 'job');

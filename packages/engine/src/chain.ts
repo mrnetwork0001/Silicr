@@ -62,13 +62,32 @@ export class NoteWatcher {
     }, ms);
   }
 
+  /**
+   * One poll. A chain error degrades instead of stopping anything: a failed height() keeps the
+   * last known tip and still polls, a failed poll() still runs onTick, and both are reported to
+   * onError. Notes the wallet already holds (a CLOSE in the mempool, say) are delivered even while
+   * the light-wallet server is unreachable.
+   */
   async pollOnce(): Promise<void> {
     if (this.running) return;
     this.running = true;
     try {
-      const tip = await this.o.backend.height();
-      this.height = tip;
-      const notes = await this.o.backend.poll(this.since);
+      let tip = this.height;
+      try {
+        tip = await this.o.backend.height();
+        this.height = tip;
+      } catch (e) {
+        this.o.onError?.(e);
+        if (tip === 0) return; // nothing known yet: wait for the first height
+      }
+      let notes: ReceivedNote[];
+      try {
+        notes = await this.o.backend.poll(this.since);
+      } catch (e) {
+        this.o.onError?.(e);
+        if (this.o.onTick && !this.stopped) await this.o.onTick(tip);
+        return;
+      }
       for (const note of notes) {
         if (this.stopped) return;
         if (note.pool !== 'orchard') continue; // never act on transparent or Sapling traffic
