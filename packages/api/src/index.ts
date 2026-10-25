@@ -114,8 +114,25 @@ export interface StatusDto {
   publicDemo?: boolean;
   /** Public demo only: the server-side example jobs a request may run. */
   presets?: JobPresetDto[];
-  /** Public demo only: the limits the daemon enforces on POST /api/rfqs. */
-  publicDemoLimits?: { maxDurationS: number; maxCount: number; maxActive: number; perIpPerHour: number; maxPricePerHourZats?: ZatsString };
+  /**
+   * Public demo only: the limits the daemon enforces on POST /api/rfqs. `allowMainnet` is set by a
+   * mainnet public demo (`--public-demo --allow-mainnet`: real ZEC from a tiny shared wallet, the
+   * spend cap enforced as a hard ceiling on every request's worst case, 400 `spend_cap`);
+   * `minWorstCaseZats` is the cheapest preset's worst case (payments at the max price plus fees).
+   */
+  publicDemoLimits?: { maxDurationS: number; maxCount: number; maxActive: number; perIpPerHour: number; maxPricePerHourZats?: ZatsString; allowMainnet?: boolean; minWorstCaseZats?: ZatsString };
+  /**
+   * Public demo buyer only: true when the shared wallet can no longer afford the cheapest preset's
+   * worst case (spendable balance, or what is left of the total spend cap, is below it). The
+   * terminal then shows "this demo has spent its budget" instead of the request form.
+   */
+  demoExhausted?: boolean;
+  /**
+   * Provider only: whether it bids on new requests right now. Inactive when auto-bid is off or
+   * (daemon option, the mainnet public demo) the wallet holds less than the fee reserve a BID and a
+   * CLOSE need; `reason` says which.
+   */
+  bidding?: { active: boolean; reason?: string };
 }
 
 /** A server-side example job offered by a public-demo daemon. */

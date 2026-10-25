@@ -5,7 +5,9 @@ import type { DaemonEvent, NewRfqRequest, StatusDto } from '@silicr/api';
 import { BuyerNode, type BuyerFault } from './buyer.ts';
 import { ProviderNode, type ProviderFault } from './provider.ts';
 import { EngineError, badRequest, notFound, toErrorDto, wrongRole } from './errors.ts';
-import { DEFAULT_PRESETS, presetDto, type JobPreset } from './presets.ts';
+import { DEFAULT_PRESETS, PUBLIC_DEMO_INTERVAL_S, presetDto, type JobPreset } from './presets.ts';
+import { feeForActions } from './base.ts';
+import { formatZec, perInterval } from './zats.ts';
 
 /** The web terminal (apps/web) runs on 7703. */
 export const WEB_PORT = 7703;
@@ -35,9 +37,42 @@ export interface PublicDemoOptions {
   acceptWindowBlocks?: number;
   /** Clock for the rate limit (tests). */
   now?: () => number;
+  /**
+   * Allow the public demo on Zcash mainnet (`--allow-mainnet`): real ZEC from a tiny shared wallet.
+   * Every other rule applies, plus: the node must have a spend cap, enforced here as a hard ceiling
+   * (a request whose worst case, payments at the max price plus fees, exceeds the per-request cap or
+   * what is left of the total is refused with 400 `spend_cap`); the max price is capped at
+   * MAINNET_DEMO_MAX_PRICE_ZATS (0.001 ZEC/h); durations stay ≤ 15 min. Default false (refused).
+   */
+  allowMainnet?: boolean;
+  /**
+   * The interval the worst case assumes (the demo provider bids PUBLIC_DEMO_INTERVAL_S). Shorter
+   * intervals mean more payments and fees for one duration, so this is the pessimistic choice.
+   */
+  intervalS?: number;
 }
 
 export const PUBLIC_DEMO_DEFAULTS = { maxDurationS: 900, maxCount: 1, maxActive: 1, perIpPerHour: 3, maxPricePerHourZats: 50_000_000n, acceptWindowBlocks: 4 } as const;
+/** Mainnet public demo: the highest max price a visitor may set, 0.001 ZEC/h (real ZEC). */
+export const MAINNET_DEMO_MAX_PRICE_ZATS = 100_000n;
+/** Mainnet public demo: requests may not run longer than 15 min. */
+export const MAINNET_DEMO_MAX_DURATION_S = 900;
+/** Mainnet public demo provider: asks 0.0005 ZEC/h (half the visitors' price ceiling). */
+export const MAINNET_DEMO_PROVIDER_MIN_PRICE_ZATS = 50_000n;
+/** Mainnet public demo provider: bids only with at least 0.0003 ZEC spendable, the fees a BID and a CLOSE need. */
+export const MAINNET_DEMO_PROVIDER_FEE_RESERVE_ZATS = 30_000n;
+
+/**
+ * The most a request can cost, fees included: every interval paid at the max price (rounded up per
+ * interval), the RFQ (padded to 4 outputs), one ACCEPT or PAY per interval and the CLOSE. The web's
+ * estimateCost does the same sum; the buyer's own cap gate counts payments only.
+ */
+export function demoWorstCaseZats(v: { durationS: number; maxPricePerHourZats: bigint }, intervalS: number): bigint {
+  const intervals = Math.max(1, Math.ceil(v.durationS / intervalS));
+  const payments = BigInt(intervals) * perInterval(v.maxPricePerHourZats, intervalS);
+  const fees = feeForActions(4) + feeForActions(2) * BigInt(intervals + 1);
+  return payments + fees;
+}
 
 export interface DaemonOptions {
   node: BuyerNode | ProviderNode;
@@ -53,7 +88,7 @@ export interface DaemonOptions {
   publicOrigins?: string[];
   /** Take the client IP from the last X-Forwarded-For entry (set by the reverse proxy). Only used for rate limits. */
   trustProxy?: boolean;
-  /** Public demo rules (`--public-demo`); refused on mainnet. */
+  /** Public demo rules (`--public-demo`); refused on mainnet unless `allowMainnet` is set and the node has a spend cap. */
   publicDemo?: boolean | PublicDemoOptions;
   /** How often a changed StatusDto is pushed to SSE clients. Default 2000 ms. */
   statusIntervalMs?: number;
@@ -84,8 +119,13 @@ export async function startDaemon(o: DaemonOptions): Promise<RunningDaemon> {
   const node = o.node;
   const origins = new Set([...(o.allowedOrigins ?? DEFAULT_ALLOWED_ORIGINS), ...publicOrigins.map((u) => u.origin)]);
   const hostNames = new Set([...LOOPBACK, ...publicOrigins.map((u) => u.hostname.replace(/^\[|\]$/g, '').toLowerCase())]);
-  const demo = o.publicDemo ? resolvePublicDemo(o.publicDemo === true ? {} : o.publicDemo) : null;
-  if (demo && node.network === 'main') throw new Error('--public-demo is refused on Zcash mainnet: a public demo spends a shared wallet; run it on testnet');
+  const demo = o.publicDemo ? resolvePublicDemo(o.publicDemo === true ? {} : o.publicDemo, node.network) : null;
+  if (demo && node.network === 'main') {
+    if (!demo.allowMainnet) throw new Error('--public-demo is refused on Zcash mainnet: a public demo spends a shared wallet; run it on testnet, or add --allow-mainnet for a tiny hard-capped wallet');
+    // The cap is the ceiling the demo promises: without one there is nothing to enforce.
+    if (!node.spendCap) throw new Error('--public-demo --allow-mainnet needs spend caps (--cap-per-request and --cap-total): the mainnet demo enforces them as a hard ceiling');
+  }
+  const mainnetDemo = !!demo && node.network === 'main';
   const rateLog = new Map<string, number[]>();
   /** Public demo: which client IP created each RFQ (memory only); stop, accept and fault are theirs alone. */
   const creators = new Map<string, string>();
@@ -183,13 +223,41 @@ export async function startDaemon(o: DaemonOptions): Promise<RunningDaemon> {
     const out: StatusDto = { ...s, publicDemo: true, demoMode: true };
     if (node.role === 'buyer') {
       out.presets = demo.presets.map(presetDto);
-      out.publicDemoLimits = { maxDurationS: demo.maxDurationS, maxCount: demo.maxCount, maxActive: demo.maxActive, perIpPerHour: demo.perIpPerHour, maxPricePerHourZats: demo.maxPricePerHourZats.toString() };
+      const cheapest = cheapestWorstCase();
+      out.publicDemoLimits = {
+        maxDurationS: demo.maxDurationS,
+        maxCount: demo.maxCount,
+        maxActive: demo.maxActive,
+        perIpPerHour: demo.perIpPerHour,
+        maxPricePerHourZats: demo.maxPricePerHourZats.toString(),
+        ...(mainnetDemo ? { allowMainnet: true } : {}),
+        minWorstCaseZats: cheapest.toString(),
+      };
+      // The shared wallet (or what the cap still allows one request) cannot afford even the cheapest preset: the demo is over.
+      let allowed: bigint | null = null;
+      if (s.spendCap) {
+        const remaining = BigInt(s.spendCap.totalZats) - BigInt(s.spendCap.spentZats);
+        const perRfq = BigInt(s.spendCap.perRfqZats);
+        allowed = remaining < perRfq ? remaining : perRfq;
+      }
+      out.demoExhausted = BigInt(s.balance.spendable) < cheapest || (allowed !== null && allowed < cheapest);
     }
     return out;
   }
 
+  /** The worst case of the cheapest preset at the demo's max price: what one more request needs at least. */
+  function cheapestWorstCase(): bigint {
+    const d = demo!;
+    let min: bigint | null = null;
+    for (const p of d.presets) {
+      const w = demoWorstCaseZats({ durationS: Math.min(p.durationS, d.maxDurationS), maxPricePerHourZats: d.maxPricePerHourZats }, d.intervalS);
+      if (min === null || w < min) min = w;
+    }
+    return min ?? 0n;
+  }
+
   function demoDisabled(what: string): void {
-    if (demo) throw new EngineError('demo_disabled', `${what} is disabled in the public testnet demo`, 403);
+    if (demo) throw new EngineError('demo_disabled', `${what} is disabled in the public ${mainnetDemo ? 'mainnet' : 'testnet'} demo`, 403);
   }
 
   /** Public demo: only the visitor (client IP) who created an RFQ may stop, accept or fault it. */
@@ -232,6 +300,7 @@ export async function startDaemon(o: DaemonOptions): Promise<RunningDaemon> {
     if (typeof max !== 'string' || !/^\d{1,20}$/.test(max) || BigInt(max) > d.maxPricePerHourZats) {
       throw badRequest(`public demo: maxPricePerHourZats must be a decimal zatoshi string of at most ${d.maxPricePerHourZats} (${Number(d.maxPricePerHourZats) / 1e8} ZEC/h)`);
     }
+    if (mainnetDemo) await assertMainnetDemoBudget({ durationS, maxPricePerHourZats: BigInt(max) });
     const live = buyer().listRfqs().filter((r) => ACTIVE.has(r.state)).length;
     if (creating || live >= d.maxActive) {
       throw new EngineError('busy', 'The public demo runs one request at a time and another visitor\'s request is live. Watch it in the Market, or try again in a few minutes.', 409);
@@ -264,6 +333,29 @@ export async function startDaemon(o: DaemonOptions): Promise<RunningDaemon> {
       return created;
     } finally {
       creating = false;
+    }
+  }
+
+  /**
+   * Mainnet public demo: the spend cap is a hard ceiling. The request's worst case (every interval at
+   * the max price, fees included) must fit the per-request cap, what is left of the total, and the
+   * wallet's spendable balance; otherwise 400 `spend_cap` (402 `insufficient_funds` for the balance).
+   */
+  async function assertMainnetDemoBudget(v: { durationS: number; maxPricePerHourZats: bigint }): Promise<void> {
+    const cap = node.spendCap!;
+    const worst = demoWorstCaseZats(v, demo!.intervalS);
+    const how = `payments at ${formatZec(v.maxPricePerHourZats)} ZEC/h for ${v.durationS} s in ${demo!.intervalS} s intervals, fees included`;
+    if (worst > cap.perRfqZats) {
+      throw new EngineError('spend_cap', `mainnet demo: this request could cost up to ${formatZec(worst)} ZEC (${how}), above the per-request cap of ${formatZec(cap.perRfqZats)} ZEC; shorten it or lower the max price`, 400);
+    }
+    const spent = node.capSpentZats();
+    const remaining = cap.totalZats > spent ? cap.totalZats - spent : 0n;
+    if (worst > remaining) {
+      throw new EngineError('spend_cap', `mainnet demo: this request could cost up to ${formatZec(worst)} ZEC (${how}), more than the ${formatZec(remaining)} ZEC left of the demo's ${formatZec(cap.totalZats)} ZEC budget (${formatZec(spent)} ZEC spent, fees included)`, 400);
+    }
+    const spendable = (await node.status()).balance.spendable;
+    if (BigInt(spendable) < worst) {
+      throw new EngineError('insufficient_funds', `mainnet demo: this request could cost up to ${formatZec(worst)} ZEC (${how}) but the shared wallet has ${formatZec(BigInt(spendable))} ZEC spendable`, 402);
     }
   }
 
@@ -431,17 +523,28 @@ function parsePublicOrigin(raw: string): URL {
   return u;
 }
 
-function resolvePublicDemo(p: PublicDemoOptions): Required<PublicDemoOptions> {
+function resolvePublicDemo(p: PublicDemoOptions, network: string): Required<PublicDemoOptions> {
   const presets = p.presets ?? DEFAULT_PRESETS;
   if (presets.length === 0) throw new Error('--public-demo needs at least one job preset');
+  const intervalS = p.intervalS ?? PUBLIC_DEMO_INTERVAL_S;
+  if (!Number.isInteger(intervalS) || intervalS < 1) throw new Error('public demo intervalS must be a positive integer');
+  let maxDurationS = p.maxDurationS ?? PUBLIC_DEMO_DEFAULTS.maxDurationS;
+  let maxPricePerHourZats = p.maxPricePerHourZats ?? PUBLIC_DEMO_DEFAULTS.maxPricePerHourZats;
+  if (p.allowMainnet && network === 'main') {
+    // Real ZEC: whatever the caller asked for, the mainnet demo never allows more than these.
+    maxDurationS = Math.min(maxDurationS, MAINNET_DEMO_MAX_DURATION_S);
+    if (maxPricePerHourZats > MAINNET_DEMO_MAX_PRICE_ZATS) maxPricePerHourZats = MAINNET_DEMO_MAX_PRICE_ZATS;
+  }
   return {
     presets,
-    maxDurationS: p.maxDurationS ?? PUBLIC_DEMO_DEFAULTS.maxDurationS,
+    maxDurationS,
     maxCount: p.maxCount ?? PUBLIC_DEMO_DEFAULTS.maxCount,
     maxActive: p.maxActive ?? PUBLIC_DEMO_DEFAULTS.maxActive,
     perIpPerHour: p.perIpPerHour ?? PUBLIC_DEMO_DEFAULTS.perIpPerHour,
-    maxPricePerHourZats: p.maxPricePerHourZats ?? PUBLIC_DEMO_DEFAULTS.maxPricePerHourZats,
+    maxPricePerHourZats,
     acceptWindowBlocks: p.acceptWindowBlocks ?? PUBLIC_DEMO_DEFAULTS.acceptWindowBlocks,
     now: p.now ?? Date.now,
+    allowMainnet: p.allowMainnet ?? false,
+    intervalS,
   };
 }

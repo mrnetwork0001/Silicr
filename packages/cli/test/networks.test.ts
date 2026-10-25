@@ -58,6 +58,22 @@ describe('networks offered to users', () => {
   it('daemon refuses --public-demo on mainnet before opening a wallet', async () => {
     await expect(run('daemon', '--role', 'buyer', '--network', 'main', '--data', join(tmp, 'm'), '--cap-per-request', '0.01', '--cap-total', '0.02', '--public-demo')).rejects.toThrow(/exit 1/);
     expect(errText()).toMatch(/--public-demo is refused on Zcash mainnet/);
+    expect(errText()).toMatch(/--allow-mainnet/);
+  });
+
+  it('daemon --public-demo --allow-mainnet needs the spend caps, and --allow-mainnet needs --public-demo', async () => {
+    await expect(run('daemon', '--role', 'buyer', '--network', 'main', '--data', join(tmp, 'm'), '--public-demo', '--allow-mainnet')).rejects.toThrow(/exit 1/);
+    // The generic mainnet cap check fires first; either way nothing opens a wallet.
+    expect(errText()).toMatch(/spend caps|--cap-total/);
+    errors = [];
+    await expect(run('daemon', '--role', 'buyer', '--network', 'test', '--data', join(tmp, 't2'), '--allow-mainnet')).rejects.toThrow(/exit 1/);
+    expect(errText()).toMatch(/--allow-mainnet only goes with --public-demo/);
+  });
+
+  it('daemon --help documents --allow-mainnet', async () => {
+    const help = buildProgram().commands.find((c) => c.name() === 'daemon')!.helpInformation();
+    expect(help).toMatch(/--allow-mainnet/);
+    expect(help).toMatch(/0\.001 ZEC\/h/);
   });
 
   it('daemon refuses a non-loopback --host without --public-origin', async () => {

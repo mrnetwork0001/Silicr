@@ -49,6 +49,12 @@ export interface ProviderNodeOptions extends NodeOptions {
   workDir?: string;
   /** Largest checkpoint (packed) uploaded after each interval. Default 64 MiB; bigger ones are skipped and reported. */
   maxCheckpointBytes?: number;
+  /**
+   * Do not bid while the wallet's spendable balance is below this (zatoshis): a BID and a CLOSE
+   * need fees, and a bid the provider cannot close would leave the buyer waiting. Default 0 (bid
+   * whenever the policy allows). The mainnet public demo sets 0.0003 ZEC. StatusDto.bidding says so.
+   */
+  minBidBalanceZats?: bigint;
 }
 
 interface ProviderPayment {
@@ -173,6 +179,7 @@ export class ProviderNode extends NodeBase {
   private readonly jobEnv: Record<string, string>;
   private readonly workDir: string;
   private readonly maxCheckpointBytes: number;
+  private readonly minBidBalanceZats: bigint;
   private readonly jobs = new Map<string, ProviderJob>();
   private readonly rt = new Map<string, JobRuntime>();
   private readonly seenRfqs = new Set<string>();
@@ -195,6 +202,8 @@ export class ProviderNode extends NodeBase {
       return j ? unhex(j.rfq.buyerKey) : null;
     };
     this.maxCheckpointBytes = o.maxCheckpointBytes ?? DEFAULT_MAX_CHECKPOINT_BYTES;
+    this.minBidBalanceZats = o.minBidBalanceZats ?? 0n;
+    if (typeof this.minBidBalanceZats !== 'bigint' || this.minBidBalanceZats < 0n) throw new RangeError('minBidBalanceZats must be a non-negative bigint');
     this.policy = {
       autoBid: true,
       minPricePerHourZats: 50_000_000n,
@@ -412,7 +421,15 @@ export class ProviderNode extends NodeBase {
     const runner: { mode: string; sandboxed: boolean; warning?: string } = { mode: this.runner.mode, sandboxed };
     if (this.runner.notice) runner.warning = this.runner.notice;
     else if (!sandboxed) runner.warning = 'process mode: jobs run as plain child processes, NOT in a sandbox (dev/demo only)';
-    return { ...s, alias: this.alias, providerId: this.providerId, runner };
+    const low = this.lowBalanceRefusal(BigInt(s.balance.spendable));
+    const bidding: NonNullable<StatusDto['bidding']> = !this.policy.autoBid ? { active: false, reason: 'auto-bid is off' } : low ? { active: false, reason: low } : { active: true };
+    return { ...s, alias: this.alias, providerId: this.providerId, runner, bidding };
+  }
+
+  /** Why the wallet balance forbids a bid right now (minBidBalanceZats), or null. */
+  private lowBalanceRefusal(spendable: bigint): string | null {
+    if (this.minBidBalanceZats === 0n || spendable >= this.minBidBalanceZats) return null;
+    return `wallet balance too low to bid: ${formatZec(spendable)} ZEC spendable, a BID and a CLOSE need at least ${formatZec(this.minBidBalanceZats)} ZEC in fees; fund the provider wallet`;
   }
 
   protected override onMemoSpent(rfqId: string, feeZats: bigint, valueZats: bigint): void {
@@ -508,7 +525,9 @@ export class ProviderNode extends NodeBase {
     void this.observeTx(e.note.txid, { rfqId, event: 'tx-received', summary: 'RFQ transaction: what the public chain shows', sealed: TX_FACTS.rfq });
 
     // Transport negotiation: a memo-mode buyer sends a HELLO memo next to the RFQ; both sides must agree.
-    const why = this.memo.bidRefusal(rfqId, rfq.buyerKey) ?? this.policyRefusal(rfq);
+    let why = this.memo.bidRefusal(rfqId, rfq.buyerKey) ?? this.policyRefusal(rfq);
+    // A fee reserve (minBidBalanceZats): a BID this wallet could not follow with a CLOSE must not go out.
+    if (!why && this.minBidBalanceZats > 0n) why = this.lowBalanceRefusal((await this.backend.balance()).spendable);
     if (why) {
       this.recordText('provider', 'no-bid', `Not bidding: ${why}`, [['Reason', why, true, false]], { rfqId });
       return;

@@ -1,7 +1,23 @@
 // `silicr init`, `silicr daemon` and `silicr relay`: set up and run one party.
 import { existsSync } from 'node:fs';
 import { basename, join, resolve } from 'node:path';
-import { BuyerNode, ProviderNode, PUBLIC_DEMO_DEFAULTS, PUBLIC_DEMO_INTERVAL_S, aliasFor, defaultProfile, maxExposureIntervals, parseZec, payLeadFor, startDaemon, type NodeBase, type SpendCap } from '@silicr/engine';
+import {
+  BuyerNode,
+  MAINNET_DEMO_MAX_PRICE_ZATS,
+  MAINNET_DEMO_PROVIDER_FEE_RESERVE_ZATS,
+  MAINNET_DEMO_PROVIDER_MIN_PRICE_ZATS,
+  ProviderNode,
+  PUBLIC_DEMO_DEFAULTS,
+  PUBLIC_DEMO_INTERVAL_S,
+  aliasFor,
+  defaultProfile,
+  maxExposureIntervals,
+  parseZec,
+  payLeadFor,
+  startDaemon,
+  type NodeBase,
+  type SpendCap,
+} from '@silicr/engine';
 import { generateSigner, signerFromSecret } from '@silicr/protocol';
 import { parseProxyUrl, relayClient, startRelay } from '@silicr/relay';
 import { createRunner } from '@silicr/runner';
@@ -236,8 +252,10 @@ export interface DaemonCmdOptions {
   capPerRequest?: string;
   capTotal?: string;
   transport?: string;
-  /** Public testnet demo rules (refused on mainnet). */
+  /** Public testnet demo rules (refused on mainnet unless allowMainnet). */
   publicDemo?: boolean;
+  /** With publicDemo on mainnet: real ZEC from a tiny shared wallet, the spend caps as a hard ceiling. */
+  allowMainnet?: boolean;
   /** Extra allowed Origins (and Host names) for a hosted deployment behind a reverse proxy. */
   publicOrigin?: string[];
   /** Use X-Forwarded-For (last entry) as the client IP for the public-demo rate limit. */
@@ -269,6 +287,8 @@ export interface PartyOptions {
   runner?: 'auto' | 'process' | 'docker';
   demoMode: boolean;
   policy?: ConstructorParameters<typeof ProviderNode>[0]['policy'];
+  /** Provider: do not bid below this spendable balance (fee reserve; the mainnet public demo). */
+  minBidBalanceZats?: bigint;
   daemon?: Omit<Parameters<typeof startDaemon>[0], 'node' | 'port'>;
   log?: (m: string) => void;
 }
@@ -315,7 +335,7 @@ export async function startParty(o: PartyOptions): Promise<StartedParty> {
     node = new BuyerNode(common);
   } else {
     const runner = await createRunner({ mode: o.runner ?? 'auto', workDir: join(dataDir, 'runner') });
-    node = new ProviderNode({ ...common, runner, ...(o.policy ? { policy: o.policy } : {}) });
+    node = new ProviderNode({ ...common, runner, ...(o.policy ? { policy: o.policy } : {}), ...(o.minBidBalanceZats !== undefined ? { minBidBalanceZats: o.minBidBalanceZats } : {}) });
   }
   try {
     await node.start();
@@ -367,7 +387,11 @@ export async function daemon(o: DaemonCmdOptions): Promise<void> {
   const blobTransport = checkTransport(o.transport) ?? checkTransport(cfg?.transport) ?? 'relay';
   if (network === 'main') console.log(`\n  ${pc.red(MAINNET_TAG)}  ${pc.dim('real funds: every send is bounded by the spend caps below and needs your go-ahead in `silicr run`')}`);
   // Checked here too, before any wallet is opened (startDaemon refuses as well).
-  if (o.publicDemo && network === 'main') fail('--public-demo is refused on Zcash mainnet: a public demo lets anyone spend a shared wallet. Run it with --network test.');
+  const mainnetDemo = !!o.publicDemo && network === 'main';
+  if (mainnetDemo && !o.allowMainnet) fail('--public-demo is refused on Zcash mainnet: a public demo lets anyone spend a shared wallet. Run it with --network test, or add --allow-mainnet for a tiny hard-capped wallet (real ZEC).');
+  if (mainnetDemo && !spendCap) fail('--public-demo --allow-mainnet needs --cap-per-request and --cap-total: the mainnet demo enforces them as a hard ceiling on every request');
+  if (o.allowMainnet && !o.publicDemo) fail('--allow-mainnet only goes with --public-demo');
+  if (mainnetDemo) console.log(`  ${pc.red('PUBLIC MAINNET DEMO')}  ${pc.dim(`anyone may spend this wallet, up to ${zec(spendCap!.perRfqZats)} per request and ${zec(spendCap!.totalZats)} in all, fees included; the max price is capped at ${zec(MAINNET_DEMO_MAX_PRICE_ZATS)}/h`)}`);
   const publicOrigins = o.publicOrigin ?? [];
   if (o.host && !['127.0.0.1', '::1', 'localhost'].includes(o.host) && publicOrigins.length === 0) {
     fail(`--host ${o.host} is not loopback: a non-loopback bind needs --public-origin <url> (a hosted deployment behind a reverse proxy)`);
@@ -385,12 +409,16 @@ export async function daemon(o: DaemonCmdOptions): Promise<void> {
     runner: (o.runner ?? cfg?.runner ?? 'auto') as 'auto' | 'process' | 'docker',
     demoMode: !!o.demoMode,
     // Public demo provider: 60 s intervals, so a judge sees a PAY train (several txids) inside one short job.
-    ...(o.publicDemo && role === 'provider' ? { policy: { intervalS: PUBLIC_DEMO_INTERVAL_S } } : {}),
+    // On mainnet it asks 0.0005 ZEC/h and bids only while the wallet holds the fees a BID and a CLOSE need.
+    ...(o.publicDemo && role === 'provider'
+      ? { policy: { intervalS: PUBLIC_DEMO_INTERVAL_S, ...(mainnetDemo ? { minPricePerHourZats: MAINNET_DEMO_PROVIDER_MIN_PRICE_ZATS } : {}) } }
+      : {}),
+    ...(mainnetDemo && role === 'provider' ? { minBidBalanceZats: MAINNET_DEMO_PROVIDER_FEE_RESERVE_ZATS } : {}),
     daemon: {
       ...(o.host ? { host: o.host } : {}),
       ...(publicOrigins.length ? { publicOrigins } : {}),
       ...(o.trustProxy ? { trustProxy: true } : {}),
-      ...(o.publicDemo ? { publicDemo: true } : {}),
+      ...(o.publicDemo ? { publicDemo: mainnetDemo ? { allowMainnet: true } : true } : {}),
     },
   });
   const { node, daemon: d } = party;
@@ -408,7 +436,10 @@ export async function daemon(o: DaemonCmdOptions): Promise<void> {
   ];
   if (spendCap || network === 'main') rows.push(capRow(spendCap));
   if (o.publicDemo) {
-    rows.push(['public demo', `${pc.yellow('on')} ${pc.dim(`presets only (examples/tiny-train) · ≤ 15 min · 1 GPU · one live request · 3 requests per IP per hour · unaccepted requests expire after ${PUBLIC_DEMO_DEFAULTS.acceptWindowBlocks} blocks · withdraw, policy, migrate and provider stop disabled`)}`]);
+    rows.push(['public demo', `${mainnetDemo ? pc.red('on, MAINNET') : pc.yellow('on')} ${pc.dim(`presets only (examples/tiny-train) · ≤ 15 min · 1 GPU · one live request · 3 requests per IP per hour · unaccepted requests expire after ${PUBLIC_DEMO_DEFAULTS.acceptWindowBlocks} blocks · withdraw, policy, migrate and provider stop disabled`)}`]);
+    if (mainnetDemo) {
+      rows.push(['hard ceiling', pc.dim(`every request's worst case (payments + fees) must fit the caps and the balance · max price ≤ ${zec(MAINNET_DEMO_MAX_PRICE_ZATS)}/h${role === 'provider' ? ` · bids only with ≥ ${zec(MAINNET_DEMO_PROVIDER_FEE_RESERVE_ZATS)} spendable` : ''}`)]);
+    }
   }
   if (publicOrigins.length) rows.push(['origins', `${publicOrigins.join(', ')} ${pc.dim(o.trustProxy ? '(X-Forwarded-For trusted for rate limits)' : '')}`]);
   if (network !== 'memory') {

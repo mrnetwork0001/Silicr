@@ -5,7 +5,7 @@ export { ProviderNode } from './provider.ts';
 export type { ProviderNodeOptions, ProviderPolicy, ProviderJob, ProviderJobDtoExt, ProviderFault } from './provider.ts';
 export { NodeBase, ENGINE_VERSION, checkSpendCap, feeForActions, zip321Uri } from './base.ts';
 export type { NodeOptions, ProxyInfo, SpendCap } from './base.ts';
-export { startDaemon, DEFAULT_ALLOWED_ORIGINS, WEB_PORT, PUBLIC_DEMO_DEFAULTS } from './daemon.ts';
+export { startDaemon, DEFAULT_ALLOWED_ORIGINS, WEB_PORT, PUBLIC_DEMO_DEFAULTS, MAINNET_DEMO_MAX_PRICE_ZATS, MAINNET_DEMO_MAX_DURATION_S, MAINNET_DEMO_PROVIDER_MIN_PRICE_ZATS, MAINNET_DEMO_PROVIDER_FEE_RESERVE_ZATS, demoWorstCaseZats } from './daemon.ts';
 export type { DaemonOptions, RunningDaemon, PublicDemoOptions } from './daemon.ts';
 export { startLocalStack, profileForBlockTime } from './stack.ts';
 export type { LocalStack, LocalStackOptions } from './stack.ts';
