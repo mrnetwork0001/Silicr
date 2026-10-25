@@ -10,7 +10,7 @@
 export type Zats = bigint;
 export const ZATS_PER_ZEC = 100_000_000n;
 
-/** 'memory' is the in-process simulated chain used by tests and the zero-setup demo. */
+/** 'memory' is the in-process simulated chain: test suite and `pnpm verify` only. The app runs on 'main' or 'test'. */
 export type Network = 'main' | 'test' | 'regtest' | 'memory';
 
 /** A ZIP 302 memo field: exactly 512 bytes. */

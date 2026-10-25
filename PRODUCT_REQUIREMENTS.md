@@ -26,7 +26,7 @@ The Private Markets brief literally says "the dark-pool thesis," so most entries
 |---|---|
 | **Privacy** ("does it actually, or only look like it does?") | Shielded only (Ironwood pool via Orchard receivers; transparent, Sapling and legacy-Orchard spends refused); no server-side matching; signed bids; E2E encrypted job channel; [THREAT_MODEL.md](THREAT_MODEL.md); in-app Leak Inspector |
 | **Usefulness** ("would someone use this on Monday?") | `silicr run ./train.py` actually runs a container on a provider and returns results, and `silicr provide` turns any GPU box into a seller |
-| **Execution** ("does it run?") | Every demo step is a real Zcash testnet transaction with a txid. Nothing in the main flow is mocked. |
+| **Execution** ("does it run?") | The app runs on Zcash testnet or mainnet: every demo step is a real shielded transaction with a txid, and nothing in the main flow is mocked. The simulated chain exists only in the test suite (`pnpm test`, `pnpm verify`). |
 | **Originality** | Shielded memos used as the RFQ and bid channel, plus metered payments as settlement. This is a compute market, not another token DEX. |
 
 ## 3. Users and flows
@@ -73,7 +73,7 @@ The Private Markets brief literally says "the dark-pool thesis," so most entries
 These would be claims we can't back up in 27 days:
 - TEE attestation or "proof of compute": TEEs are listed as future work and not mocked in the demo.
 - Hiding the workload from the provider (needs a TEE).
-- Large balances. Silicr runs on Zcash mainnet (decided 2026-10-21, so the demo uses real ZEC), but only with spend caps and small wallets. The software is unaudited.
+- Large balances. Silicr runs on Zcash testnet or mainnet (mainnet since 2026-10-21, real ZEC, only with spend caps and small wallets; `silicr demo` and the hosted demo stay on testnet). The software is unaudited.
 
 ## 5. Build plan (Oct 1 → Oct 28)
 

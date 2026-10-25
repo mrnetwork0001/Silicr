@@ -22,7 +22,7 @@ export interface NodeOptions {
   dataDir: string;
   profile?: TimingProfile;
   deps?: Partial<EngineDeps>;
-  /** Every party runs on this machine (zero-setup or local demo). */
+  /** Every party runs on this machine (`silicr demo` on testnet, or the test harness). */
   demoMode?: boolean;
   /** Diagnostics sink. Never receives secrets, memo plaintext or job contents. */
   log?: (msg: string) => void;
