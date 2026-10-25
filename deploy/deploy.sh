@@ -104,6 +104,6 @@ log "nginx"
 
 log "status"
 "${SSH[@]}" 'docker ps --filter label=com.docker.compose.project=silicr --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}"'
-for u in "https://$LANDING_HOST/" "https://$APP_HOST/" "https://$APP_HOST/relay/health"; do
+for u in "https://$LANDING_HOST/" "https://$APP_HOST/" "https://$APP_HOST/provider" "https://$APP_HOST/api/relay/health" "https://$APP_HOST/api/buyer/api/status" "https://$APP_HOST/api/provider/api/status"; do
   printf '%s %s\n' "$(curl -s -o /dev/null -m 20 -w '%{http_code}' "$u")" "$u"
 done

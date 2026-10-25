@@ -28,9 +28,9 @@ COPY . .
 # Public URLs are inlined into the browser bundles at build time.
 ARG APP_ORIGIN=https://app.silicr.38-49-213-208.sslip.io
 ARG LANDING_ORIGIN=https://silicr.38-49-213-208.sslip.io
-ENV NEXT_PUBLIC_BUYER_URL=${APP_ORIGIN}/buyer \
-    NEXT_PUBLIC_PROVIDER_URL=${APP_ORIGIN}/provider \
-    NEXT_PUBLIC_RELAY_URL=${APP_ORIGIN}/relay \
+ENV NEXT_PUBLIC_BUYER_URL=${APP_ORIGIN}/api/buyer \
+    NEXT_PUBLIC_PROVIDER_URL=${APP_ORIGIN}/api/provider \
+    NEXT_PUBLIC_RELAY_URL=${APP_ORIGIN}/api/relay \
     NEXT_PUBLIC_LANDING_URL=${LANDING_ORIGIN} \
     NEXT_PUBLIC_APP_URL=${APP_ORIGIN} \
     NEXT_PUBLIC_SITE_URL=${LANDING_ORIGIN}

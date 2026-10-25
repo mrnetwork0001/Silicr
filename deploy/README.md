@@ -5,10 +5,15 @@ Silicr's public demo on Zcash **testnet**, on a shared VPS behind its existing n
 | URL | What | Upstream |
 |---|---|---|
 | https://silicr.38-49-213-208.sslip.io | landing page (static export of `apps/landing`) | `/var/www/silicr/landing` |
-| https://app.silicr.38-49-213-208.sslip.io/ | web terminal (`next start`) | `127.0.0.1:8703` |
-| …/buyer/ | buyer daemon (`/buyer/api/events` is SSE) | `127.0.0.1:8701` |
-| …/provider/ | provider daemon | `127.0.0.1:8702` |
-| …/relay/ | ciphertext-only relay, directory, observer | `127.0.0.1:8700` |
+| https://app.silicr.38-49-213-208.sslip.io/ | web terminal (`next start`; its pages are `/`, `/provider`, `/wallet`, `/rfq/:id`) | `127.0.0.1:8703` |
+| …/api/buyer/ | buyer daemon (`/api/buyer/api/events` is SSE) | `127.0.0.1:8701` |
+| …/api/provider/ | provider daemon | `127.0.0.1:8702` |
+| …/api/relay/ | ciphertext-only relay, directory, observer | `127.0.0.1:8700` |
+
+The daemon proxies sit under `/api/…` on purpose: nginx prefix locations such as `/provider/` made
+`/provider` (a terminal page) 301 to `/provider/`, which is the provider daemon's `/` (404). The
+terminal has no `/api` routes of its own, so nothing can collide there. `Dockerfile.node` bakes
+`NEXT_PUBLIC_BUYER_URL=$APP_ORIGIN/api/buyer` (and `/api/provider`, `/api/relay`) into the web build.
 
 ## Files
 
@@ -33,7 +38,7 @@ What it does:
 2. On the first run (or with `--wallets`) it copies **only** `.silicr/wallets/test-buyer` and `.silicr/wallets/test-provider` (refusing anything not `test-*` or whose config is not `"network": "test"`) to `/opt/silicr/data/wallets/` with scp, without the lock and log files. Directories are 0700, files 0600, owned by uid 1000. Mainnet wallets are never copied.
 3. Builds `silicr-sidecar`, `silicr-landing` and `silicr-node` under `nice -n 15` with `DOCKER_BUILDKIT=0`. Public URLs are build args (`APP_ORIGIN`, `LANDING_ORIGIN`) because Next inlines `NEXT_PUBLIC_*` at build time.
 4. Copies the landing export to `/var/www/silicr/landing` (swapped in atomically).
-5. `docker compose -p silicr up -d`. The daemons start only if the image's `silicr daemon --help` lists `--public-origin`, `--trust-proxy` and `--public-demo`; otherwise only `relay` and `web` start.
+5. `docker compose -p silicr up -d`. The daemons start only if the image's `silicr daemon --help` lists `--public-origin`, `--trust-proxy` and `--public-demo`; otherwise only `relay` and `web` start. With `--public-demo` the provider bids 60 s intervals (`PUBLIC_DEMO_INTERVAL_S`), the buyer auto-accepts requests that don't say otherwise and expires an unaccepted request 4 blocks after its bid window, and stop/accept/fault are scoped to the visitor (IP) who made the request.
 6. Installs the nginx file. If the app cert is missing, it first installs it without the app's 443 block, reloads, runs `certbot certonly --webroot -w /var/www/silicr -d app.silicr…`, then installs the full file. Every install runs `nginx -t` first and only then `systemctl reload nginx` (never restart); on failure the previous silicr file is restored.
 
 ## Sandbox

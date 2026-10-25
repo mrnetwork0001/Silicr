@@ -53,7 +53,7 @@ pnpm --filter @silicr/web dev       # the terminal on http://localhost:7703 (pre
 
 ## Public testnet demo
 
-A hosted testnet stack runs at **https://app.silicr.38-49-213-208.sslip.io** (the daemons are proxied under `/buyer/`, `/provider/` and `/relay/`). It is a shared wallet with testnet coins only. A daemon serves it with:
+A hosted testnet stack runs at **https://app.silicr.38-49-213-208.sslip.io** (the daemons are proxied under `/api/buyer/`, `/api/provider/` and `/api/relay/`). It is a shared wallet with testnet coins only. A daemon serves it with:
 
 | Flag | What it does |
 |---|---|
