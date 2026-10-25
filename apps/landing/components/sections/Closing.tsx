@@ -1,6 +1,6 @@
 import { DieScene } from '@/components/eclipse/DieScene';
 import { ArrowUpRight, FileText } from '@/components/icons';
-import { APP_URL, DEMO_VIDEO_URL, REPO_URL, repoFileUrl } from '@/lib/config';
+import { APP_URL, DEMO_VIDEO_URL, MAINNET_DEMO_URL, REPO_URL, repoFileUrl } from '@/lib/config';
 import { Wordmark } from '../Logo';
 import { Reveal } from '../motion/Reveal';
 
@@ -29,6 +29,12 @@ export function FinalCta() {
                 Launch app
                 <ArrowUpRight className="size-[18px]" aria-hidden />
               </a>
+              {MAINNET_DEMO_URL && (
+                <a href={MAINNET_DEMO_URL} className="btn-outline text-[16px]" title="Public mainnet demo: real ZEC, a tiny shared wallet, hard-capped">
+                  Real ZEC demo · tiny capped wallet
+                  <ArrowUpRight className="size-[18px] text-muted" aria-hidden />
+                </a>
+              )}
               {threatModel && (
                 <a
                   href={threatModel}

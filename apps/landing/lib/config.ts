@@ -22,6 +22,12 @@ function httpUrl(raw: string | undefined): string | null {
 /** Where every "Launch app" button points: the local web terminal unless overridden. */
 export const APP_URL: string = httpUrl(process.env.NEXT_PUBLIC_APP_URL) ?? 'http://127.0.0.1:7703';
 
+/**
+ * The hosted mainnet demo (real ZEC, a tiny hard-capped shared wallet). Only the final CTA links to
+ * it, next to Launch app; hidden when unset.
+ */
+export const MAINNET_DEMO_URL: string | null = httpUrl(process.env.NEXT_PUBLIC_MAINNET_URL);
+
 /** Public source repository (e.g. https://github.com/org/silicr). Repo links are hidden when unset. */
 export const REPO_URL: string | null = httpUrl(process.env.NEXT_PUBLIC_REPO_URL);
 

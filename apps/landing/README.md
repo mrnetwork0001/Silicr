@@ -19,6 +19,7 @@ All optional; see [.env.example](.env.example). Values are inlined at build time
 | Variable | Default | Effect |
 |---|---|---|
 | `NEXT_PUBLIC_APP_URL` | `http://127.0.0.1:7703` | Target of every "Launch app" button |
+| `NEXT_PUBLIC_MAINNET_URL` | unset | Shows the "Real ZEC demo · tiny capped wallet" link next to Launch app in the final CTA (the hosted mainnet demo) |
 | `NEXT_PUBLIC_REPO_URL` | unset | Shows the Source, Threat model and `git clone` links |
 | `NEXT_PUBLIC_REPO_BRANCH` | `main` | Branch for links to files in the repo |
 | `NEXT_PUBLIC_DEMO_VIDEO_URL` | unset | Shows the "Watch the demo" links |
