@@ -12,7 +12,10 @@ export function PublicDemoBanner() {
       <div className="mx-auto flex max-w-[1600px] items-center gap-2 px-4 py-1.5 sm:px-6">
         <Info className="size-3.5 shrink-0 text-accent" aria-hidden />
         <span className="font-semibold text-fg">Public testnet demo: shared wallet, testnet coins only.</span>
-        <span className="hidden text-muted sm:inline">Pick an example job; withdrawals and provider settings are off. One request at a time.</span>
+        <span className="hidden text-muted sm:inline">
+          Pick an example job (&ldquo;Long training run&rdquo; shows interval payments and the watchdog); withdrawals and provider settings are off. One
+          request at a time.
+        </span>
       </div>
     </div>
   );

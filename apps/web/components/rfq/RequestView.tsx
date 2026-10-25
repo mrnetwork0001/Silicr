@@ -266,9 +266,9 @@ function ChainCard({ rfq }: { rfq: RfqDto }) {
     <Panel title="What the public chain saw" subtitle="Every step is a fully shielded transaction">
       <div className="space-y-2.5 p-4 text-xs text-muted">
         <p>
-          <span className="font-semibold tabular-nums text-fg">{txs}</span> shielded transactions so far: the RFQ ({rfq.paddedOutputs} actions, padded
-          from {rfq.providersAsked} recipients), {rfq.bids.length} bids and {rfq.payments.length} payments. No transparent or Sapling parts, and
-          nothing on the legacy Orchard pool.
+          <span className="font-semibold tabular-nums text-fg">{txs}</span> shielded transactions so far: the RFQ ({rfq.paddedOutputs} outputs:{' '}
+          {rfq.providersAsked} recipient{rfq.providersAsked === 1 ? '' : 's'}, padded), {rfq.bids.length} bids and {rfq.payments.length} payments. No
+          transparent or Sapling parts, and nothing on the legacy Orchard pool.
         </p>
         <p>A block explorer sees action counts and fees. Not who paid whom, how much, or that this is Silicr traffic.</p>
         <Button size="sm" className="w-full" icon={<ScanEye className="size-3.5" aria-hidden />} onClick={() => actions.setInspector({ open: true, pinnedRfqId: rfq.rfqId })}>

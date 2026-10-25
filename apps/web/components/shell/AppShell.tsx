@@ -117,7 +117,8 @@ export function AppShell({ children }: { children: ReactNode }) {
   return (
     <>
       <Backdrop />
-      <div ref={chromeRef} className="sticky top-0 z-40">
+      {/* The chrome is translucent over the page; under the open inspector sheet it goes opaque so nothing shows through its strip. */}
+      <div ref={chromeRef} className={clsx('sticky top-0 z-40', inspectorOpen && 'bg-bg')}>
         <div ref={bannerRef}>
           <PublicDemoBanner />
         </div>
