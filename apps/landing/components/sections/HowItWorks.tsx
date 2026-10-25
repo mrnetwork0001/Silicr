@@ -63,9 +63,10 @@ const STEPS = [
     roadmap: true,
     body: (
       <>
-        Planned: providers lock a bond in a <strong className="font-medium text-fg">FROST 2-of-3</strong> shielded address
-        (provider, buyer pool, arbiter) that can be slashed on signed evidence of fraud. Not built yet: it is a stretch goal,
-        and the arbiter would be a trusted party.
+        Experimental: a bond is a shielded address whose spending key is split three ways with{' '}
+        <strong className="font-medium text-fg">FROST 2-of-3</strong> (provider, buyer pool, arbiter), so no single party
+        can move it. Proven on Zcash testnet: key generation, funding, and a release signed by two of the three. Not yet
+        wired into the market (no arbiter service, no slashing flow, no bid badge), and the arbiter would be a trusted party.
       </>
     ),
   },
@@ -110,7 +111,7 @@ export function HowItWorks() {
                 </h3>
                 {s.roadmap && (
                   <span className="rounded-full border border-warn/60 bg-panel px-2 py-0.5 text-[12px] font-medium text-warn">
-                    Roadmap · not built
+                    Experimental · proven on testnet
                   </span>
                 )}
               </div>
@@ -132,7 +133,7 @@ export function HowItWorks() {
           <h3 className="text-[19px] font-semibold tracking-tight">No matching engine</h3>
           <p className="mt-1.5 max-w-3xl text-[15.5px] leading-relaxed text-fg/85">
             There is no order book on a server and no operator who sees every order. Bids land at your one-time address and
-            your own client ranks them: by price per hour, then bond size (bonds are on the roadmap), then arrival. You accept
+            your own client ranks them: by price per hour, then bond size (bonds are experimental and not yet shown in bids), then arrival. You accept
             one yourself, or set an auto-accept rule such as &ldquo;the cheapest bid after waiting two blocks&rdquo;.
           </p>
         </div>

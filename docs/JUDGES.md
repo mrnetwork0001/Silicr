@@ -99,7 +99,7 @@ Copied from THREAT_MODEL.md, not softened.
 3. **No proof of correct computation.** Heartbeats show the job is progressing, not that it ran on the claimed GPU or produced honest outputs. Bonds and reputation discourage cheating but don't prevent it.
 4. **Timing correlation and the payment train.** The light-wallet server sees the buyer's IP broadcast one padded RFQ, then a run of uniform 2-action payments. From that it can link one job's transactions and infer roughly how long the job ran. Random jitter on payment times blurs the cadence, but not the count. Whoever runs the relay can also line up blob timing with chain timing. Mitigations not yet built: batched payments, randomised upload delays, Tor, and running your own light-wallet server.
 5. **Losing bidders see demand.** RFQ details reach every provider asked. Buyers control this by choosing how many to ask.
-6. **The arbiter is trusted** in the FROST bond flow (stretch only).
+6. **The arbiter is trusted** in the FROST bond flow (experimental, not yet in the market).
 7. **Process-mode runner is not a sandbox.** The Docker runner isolates jobs: no network, read-only filesystem, all capabilities dropped. The process-mode fallback, used when Docker is unavailable, does not, and the provider's status says so.
 
 You can see limits 2 and 4 in the `pnpm verify` output itself: the observer feed carries a `client ip` field, and check 6's evidence shows the chain receiving one PAY per interval. On mainnet, Silicr's transactions sit among every other shielded Ironwood transaction, which weakens the inference in limit 4 but does not remove it.
@@ -128,7 +128,8 @@ The audit notes behind the checks above, with where to look.
 | Job runner | Process mode: a child process of the provider, **not a sandbox** | Docker mode when available (`runner.sandboxed: true`); process mode otherwise, and the status says so |
 | Job | Real: `examples/tiny-train` trains a bigram model with checkpoints and resumes | Any bundle the buyer ships |
 | GPUs | Simulated: the provider advertises GPUs, the job runs on the CPU | Passed through with `--gpus` only when the NVIDIA runtime exists; otherwise CPU, and the runner says so. The hosted demos (app.silicr.xyz, mainnet.silicr.xyz) advertise `1× a100` via `silicr daemon --gpu a100 --count 1 --vram 80` and run the preset jobs on the container's CPU |
-| FROST bonds, Noir job-count proof | Not built (stretch) | Not built |
+| FROST bonds | Experimental: 2-of-3 custody proven on testnet (release tx `f183ce4ebccd…`), not wired into the market, no slashing | `cargo test` (3 FROST tests), `zec-sidecar frost` |
+| Noir job-count proof | Not built (stretch) | Not built |
 
 ## 8. What this kit could not verify
 

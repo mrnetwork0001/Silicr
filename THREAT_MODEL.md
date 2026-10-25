@@ -17,7 +17,7 @@ ZECATHON judges treat leaks as disqualifying. This document lists every party, w
 | **Providers sent an RFQ (losing bidders)** | The request: GPU type, count, duration; the max price only if the buyer chose `--disclose-max` (by default the RFQ carries 0 = undisclosed, providers bid their own price and the buyer filters bids locally) | The buyer's budget (unless disclosed), who the buyer is, which bid won, the job itself |
 | **Winning provider** | The request, the price, the job bundle and its outputs | The buyer's wallet, identity, IP address (both sides only talk to the relay) or other jobs (each RFQ uses a fresh key and address) |
 | **Buyer** | Every bid it received, its job and its results | Providers' other jobs or earnings |
-| **Silicr arbiter** *(stretch, FROST)* | Bond addresses and the evidence submitted in disputes | Undisputed trades |
+| **Silicr arbiter** *(FROST bonds, experimental, not yet in the market)* | Bond addresses and the evidence submitted in disputes | Undisputed trades |
 
 ## Mitigations we ship
 - **Shielded only.** Every address is an Orchard-receiver-only unified address, and the wallet spends Ironwood notes only. Transparent, Sapling and legacy-Orchard (turnstile) spends are refused in TypeScript and again in the Rust wallet, on both the proposal and the finished transaction, with a plain explanation of why.
@@ -35,5 +35,5 @@ ZECATHON judges treat leaks as disqualifying. This document lists every party, w
 3. **No proof of correct computation.** Heartbeats show the job is progressing, not that it ran on the claimed GPU or produced honest outputs. Bonds and reputation discourage cheating but don't prevent it.
 4. **Timing correlation and the payment train.** The light-wallet server sees the buyer's IP broadcast one padded RFQ, then a run of uniform 2-action payments. From that it can link one job's transactions and infer roughly how long the job ran. Random jitter on payment times blurs the cadence, but not the count. Whoever runs the relay can also line up blob timing with chain timing. Mitigations not yet built: batched payments, randomised upload delays, Tor, and running your own light-wallet server.
 5. **Losing bidders see demand.** RFQ details reach every provider asked. Buyers control this by choosing how many to ask.
-6. **The arbiter is trusted** in the FROST bond flow (stretch only).
+6. **The arbiter is trusted** in the FROST bond flow. The 2-of-3 custody is proven on testnet, but the arbiter service and slashing are not built, so bonds protect nobody yet.
 7. **Process-mode runner is not a sandbox.** The Docker runner isolates jobs: no network, read-only filesystem, all capabilities dropped. The process-mode fallback, used when Docker is unavailable, does not, and the provider's status says so.

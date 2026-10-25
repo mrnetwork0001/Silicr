@@ -69,7 +69,7 @@ export function LeakInspector() {
           <span className="font-medium text-fg">Buyer</span>: can&apos;t learn providers&apos; other jobs or earnings.
         </li>
         <li>
-          <span className="font-medium text-fg">Silicr arbiter</span> (roadmap, FROST bonds): would see bond addresses and
+          <span className="font-medium text-fg">Silicr arbiter</span> (FROST bonds, experimental, not yet in the market): would see bond addresses and
           the evidence submitted in disputes, and nothing about undisputed trades.
         </li>
       </ul>

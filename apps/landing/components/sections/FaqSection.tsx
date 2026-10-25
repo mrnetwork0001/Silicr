@@ -57,7 +57,7 @@ const ITEMS = [
         </p>
         <p>
           Heartbeats carry a step count and a checkpoint hash. They show the job is progressing, not that it ran on the
-          claimed GPU or produced honest outputs. Provider bonds with slashing (FROST 2-of-3) are on the roadmap.
+          claimed GPU or produced honest outputs. Provider bonds (FROST 2-of-3 threshold custody) are proven on testnet but not yet wired into the market; slashing is not built.
         </p>
       </>
     ),
