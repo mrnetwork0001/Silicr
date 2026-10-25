@@ -38,7 +38,9 @@ services:
 
   # The process runner executes jobs inside this container: the container is the sandbox
   # (read-only root, no capabilities, no-new-privileges, tmpfs /tmp, pid/CPU/memory limits,
-  # its own wallet mount only, no Docker socket).
+  # its own wallet mount only, no Docker socket). --gpu a100 --count 1 --vram 80 is what the provider
+  # advertises (policy.json is not copied by deploy.sh and PUT /api/policy is disabled in the public
+  # demo); the job still runs on the container's CPU.
   provider:
     <<: *hardening
     command:
@@ -62,6 +64,12 @@ services:
       - http://relay:8700
       - --runner
       - process
+      - --gpu
+      - a100
+      - --count
+      - "1"
+      - --vram
+      - "80"
       - --public-origin
       - https://app.silicr.xyz
       - --public-origin

@@ -3,6 +3,7 @@ import { existsSync } from 'node:fs';
 import { basename, join, resolve } from 'node:path';
 import {
   BuyerNode,
+  GPU_SLUG,
   MAINNET_DEMO_MAX_PRICE_ZATS,
   MAINNET_DEMO_PROVIDER_FEE_RESERVE_ZATS,
   MAINNET_DEMO_PROVIDER_MIN_PRICE_ZATS,
@@ -18,6 +19,7 @@ import {
   type NodeBase,
   type SpendCap,
 } from '@silicr/engine';
+import type { GpuSpec } from '@silicr/api';
 import { generateSigner, signerFromSecret } from '@silicr/protocol';
 import { parseProxyUrl, relayClient, startRelay } from '@silicr/relay';
 import { createRunner } from '@silicr/runner';
@@ -129,6 +131,27 @@ export function resolveCaps(network: Net, role: Role, perFlag: string | undefine
   }
   if (per > total) fail('--cap-per-request cannot exceed --cap-total');
   return { perRfqZats: per, totalZats: total };
+}
+
+/**
+ * `silicr daemon --gpu <model> [--count <n>] [--vram <gb>]` for a provider: the GPU list the policy
+ * advertises from this start on (it replaces `gpus` in policy.json, which the node persists). Null
+ * when --gpu is absent: the policy stays as persisted (`1× cpu` on a fresh data dir). A hosted demo
+ * provider whose policy.json is never copied and whose PUT /api/policy is disabled sets it here.
+ */
+export function resolveGpuFlags(role: Role, gpu: string | undefined, count: string | undefined, vram: string | undefined): GpuSpec[] | null {
+  if (gpu === undefined) {
+    if (count !== undefined || vram !== undefined) fail('--count and --vram go with --gpu <model>');
+    return null;
+  }
+  if (role !== 'provider') fail('--gpu, --count and --vram are provider flags (the GPUs this provider advertises); a buyer names its GPU in `silicr run --gpu`');
+  const model = gpu.trim().toLowerCase();
+  if (!GPU_SLUG.test(model)) fail('--gpu must be a slug like a100, h100 or cpu (a-z, 0-9, -; at most 16 chars)');
+  const n = count === undefined ? 1 : Number(count);
+  if (!/^\d+$/.test(count ?? '1') || !Number.isInteger(n) || n < 1 || n > 64) fail('--count must be an integer 1..64');
+  const vramGb = vram === undefined ? 0 : Number(vram);
+  if (!/^\d+(\.\d+)?$/.test(vram ?? '0') || !Number.isFinite(vramGb) || vramGb < 0 || vramGb > 4096) fail('--vram must be a number of GB (0..4096)');
+  return [{ model, count: n, vramGb }];
 }
 
 /** The real-chain wallet (zec-sidecar) for a network: an explicit `network`, nothing defaults to mainnet. */
@@ -247,6 +270,10 @@ export interface DaemonCmdOptions {
   port?: string;
   server?: string;
   runner?: string;
+  /** Provider: advertise this GPU model (with --count and --vram) from this start on; persisted in policy.json. */
+  gpu?: string;
+  count?: string;
+  vram?: string;
   demoMode?: boolean;
   proxy?: string;
   capPerRequest?: string;
@@ -385,6 +412,8 @@ export async function daemon(o: DaemonCmdOptions): Promise<void> {
   // Mainnet without caps stops here, before any wallet is opened (the node checks again in start()).
   const spendCap = resolveCaps(network, role, o.capPerRequest, o.capTotal, cfg?.spendCap);
   const blobTransport = checkTransport(o.transport) ?? checkTransport(cfg?.transport) ?? 'relay';
+  // Checked before any wallet is opened, like the caps.
+  const gpus = resolveGpuFlags(role, o.gpu, o.count, o.vram);
   if (network === 'main') console.log(`\n  ${pc.red(MAINNET_TAG)}  ${pc.dim('real funds: every send is bounded by the spend caps below and needs your go-ahead in `silicr run`')}`);
   // Checked here too, before any wallet is opened (startDaemon refuses as well).
   const mainnetDemo = !!o.publicDemo && network === 'main';
@@ -410,8 +439,14 @@ export async function daemon(o: DaemonCmdOptions): Promise<void> {
     demoMode: !!o.demoMode,
     // Public demo provider: 60 s intervals, so a judge sees a PAY train (several txids) inside one short job.
     // On mainnet it asks 0.0005 ZEC/h and bids only while the wallet holds the fees a BID and a CLOSE need.
-    ...(o.publicDemo && role === 'provider'
-      ? { policy: { intervalS: PUBLIC_DEMO_INTERVAL_S, ...(mainnetDemo ? { minPricePerHourZats: MAINNET_DEMO_PROVIDER_MIN_PRICE_ZATS } : {}) } }
+    // --gpu seeds the advertised GPU list (the node persists the merged policy on start).
+    ...(role === 'provider' && (o.publicDemo || gpus)
+      ? {
+          policy: {
+            ...(o.publicDemo ? { intervalS: PUBLIC_DEMO_INTERVAL_S, ...(mainnetDemo ? { minPricePerHourZats: MAINNET_DEMO_PROVIDER_MIN_PRICE_ZATS } : {}) } : {}),
+            ...(gpus ? { gpus } : {}),
+          },
+        }
       : {}),
     ...(mainnetDemo && role === 'provider' ? { minBidBalanceZats: MAINNET_DEMO_PROVIDER_FEE_RESERVE_ZATS } : {}),
     daemon: {
@@ -451,6 +486,8 @@ export async function daemon(o: DaemonCmdOptions): Promise<void> {
   }
   if (node instanceof ProviderNode) {
     rows.push(['provider', `${pc.bold(node.alias)} ${pc.dim(node.providerId)}`]);
+    const pol = node.getPolicy();
+    rows.push(['gpus', `${pol.gpus.map((g) => `${g.count}× ${g.model}${g.vramGb ? ` ${g.vramGb} GB` : ''}`).join(', ')} ${pc.dim(gpus ? '(from --gpu, saved to policy.json)' : '(policy.json; `silicr provide` or --gpu to change)')}`]);
     const st = (await node.status()) as typeof s & { runner: { sandboxed: boolean; warning?: string; mode: string } };
     rows.push(['runner', st.runner.sandboxed ? pc.green('docker sandbox') : pc.red(`${st.runner.mode} mode: NOT a sandbox`)]);
   }

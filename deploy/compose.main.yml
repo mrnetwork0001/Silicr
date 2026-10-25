@@ -41,6 +41,8 @@ services:
 
   # The process runner executes jobs inside this container: the container is the sandbox (see compose.yml).
   # Mainnet demo provider: asks 0.0005 ZEC/h, 60 s intervals, bids only with >= 0.0003 ZEC for fees.
+  # --gpu a100 --count 1 --vram 80 is what it advertises (policy.json is not copied by deploy.sh and
+  # PUT /api/policy is disabled in the public demo); the job still runs on the container's CPU.
   provider:
     <<: *hardening
     command:
@@ -68,6 +70,12 @@ services:
       - http://relay:8710
       - --runner
       - process
+      - --gpu
+      - a100
+      - --count
+      - "1"
+      - --vram
+      - "80"
       - --public-origin
       - https://mainnet.silicr.xyz
       - --trust-proxy
