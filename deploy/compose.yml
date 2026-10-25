@@ -63,6 +63,8 @@ services:
       - --runner
       - process
       - --public-origin
+      - https://app.silicr.xyz
+      - --public-origin
       - https://app.silicr.38-49-213-208.sslip.io
       - --trust-proxy
       - --public-demo
@@ -102,6 +104,8 @@ services:
       - "7701"
       - --relay
       - http://relay:8700
+      - --public-origin
+      - https://app.silicr.xyz
       - --public-origin
       - https://app.silicr.38-49-213-208.sslip.io
       - --trust-proxy
