@@ -50,16 +50,20 @@ describe('the request form on a public demo daemon', () => {
     expect(rules.limits?.maxDurationS).toBe(900);
   });
 
-  it('opens on the first preset, clamped to the limits', () => {
+  it('opens on the first preset, clamped to the limits, auto-accepting after one block', () => {
     const f = publicDemoForm(FORM, rules);
     expect(f.preset).toBe('tiny-train');
     expect(f.gpu).toBe('a100');
     expect(f.count).toBe('1');
     expect([f.duration, f.unit]).toEqual(['10', 'min']);
+    // An abandoned manual request would hold the demo's single slot: auto-accept is on by default.
+    expect([f.autoAccept, f.waitBlocks]).toEqual([true, '1']);
+    expect(derive(f, rules).waitBlocks).toBe(1);
     expect(derive(f, rules).errors).toEqual({});
-    // Another preset adopts its GPU and duration.
-    const g = publicDemoForm({ ...f, preset: 'tiny-train-short' }, rules);
-    expect([g.gpu, g.duration]).toEqual(['cpu', '5']);
+    // Another preset adopts its GPU and duration, and leaves the visitor's auto-accept choice alone.
+    const g = publicDemoForm({ ...f, preset: 'tiny-train-short', autoAccept: false }, rules, { keepAutoAccept: true });
+    expect([g.gpu, g.duration, g.autoAccept]).toEqual(['cpu', '5', false]);
+    expect(publicDemoForm({ ...f, autoAccept: false }, rules).autoAccept).toBe(true);
   });
 
   it('ignores folder, command and env, and refuses anything over the limits', () => {

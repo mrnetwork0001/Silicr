@@ -229,7 +229,7 @@ export function MarketView() {
             setForm((f) => {
               const next = { ...f, [key]: value };
               // Picking another preset adopts its GPU and duration (within the demo's limits).
-              return key === 'preset' && demoRules ? publicDemoForm(next, demoRules) : next;
+              return key === 'preset' && demoRules ? publicDemoForm(next, demoRules, { keepAutoAccept: true }) : next;
             });
           }}
           derived={derivedWithRecipients}

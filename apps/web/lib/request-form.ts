@@ -24,8 +24,12 @@ export function publicDemoRules(status: StatusDto | null): PublicDemoRules | nul
   return { presets: Array.isArray(status.presets) ? status.presets : [], limits: status.publicDemoLimits ?? null };
 }
 
-/** The form as a public demo opens it: the first preset, at most the demo's limits. */
-export function publicDemoForm(f: RequestFormState, rules: PublicDemoRules): RequestFormState {
+/**
+ * The form as a public demo opens it: the first preset, at most the demo's limits, and auto-accept
+ * after one block (an abandoned manual request would hold the shared slot). `keepAutoAccept` leaves
+ * the visitor's own auto-accept choice alone (a preset change).
+ */
+export function publicDemoForm(f: RequestFormState, rules: PublicDemoRules, opts: { keepAutoAccept?: boolean } = {}): RequestFormState {
   const preset = rules.presets.find((p) => p.id === f.preset) ?? rules.presets[0];
   const maxS = rules.limits?.maxDurationS ?? 900;
   const durS = Math.min(preset?.durationS ?? maxS, maxS);
@@ -36,6 +40,7 @@ export function publicDemoForm(f: RequestFormState, rules: PublicDemoRules): Req
   return {
     ...f,
     ...(clampPrice ? { maxZec: formatZecPlain(BigInt(maxPrice)) } : {}),
+    ...(opts.keepAutoAccept ? {} : { autoAccept: true, waitBlocks: '1' }),
     preset: preset?.id ?? '',
     gpu: preset?.gpu ?? f.gpu,
     count: String(Math.min(Math.max(1, Number(f.count) || 1), maxCount)),
