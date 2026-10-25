@@ -68,8 +68,10 @@ export function WalletPanel({ compact }: { compact?: boolean }) {
   const { wallet, error, refresh } = useWallet(role);
   const publicDemo = useSilicr(isPublicDemo);
   const blockTimeS = useSilicr((s) => (role === 'provider' ? s.providerStatus : s.buyerStatus)?.blockTimeS ?? null);
+  // Whether this is a public demo (withdraw off) is only known once the daemon's status is in.
+  const statusLoaded = useSilicr((s) => !!(role === 'provider' ? s.providerStatus : s.buyerStatus));
 
-  if (mode === 'probing') {
+  if (mode === 'probing' || (role && !statusLoaded)) {
     return <Skeleton className="h-64 w-full rounded-xl" />;
   }
   if (!role) {
