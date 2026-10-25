@@ -31,9 +31,8 @@ export function SiteHeader() {
     return () => io.disconnect();
   }, []);
 
-  useEffect(() => {
-    if (!shown) setOpen(false);
-  }, [shown]);
+  // The drawer is not tied to `shown`: locking the body while it opens can make the hero re-intersect
+  // for a frame, and closing the drawer on that would make it impossible to open from a phone.
 
   // Highlight the section that crosses the middle of the viewport.
   useEffect(() => {

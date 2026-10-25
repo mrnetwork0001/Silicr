@@ -27,12 +27,24 @@ export function MobileDrawer({ id, open, onClose, links, active }: { id: string;
       if (e.key === 'Escape') onClose();
     };
     window.addEventListener('keydown', onKey);
-    const prev = document.body.style.overflow;
-    document.body.style.overflow = 'hidden';
+    // Lock the page without moving it: `overflow: hidden` alone lets iOS scroll and can reset the
+    // scroll position (which re-shows the hero and used to close the sticky header's drawer). Fixing
+    // the body at -scrollY keeps the page where it was; the position is put back on close.
+    const body = document.body;
+    const scrollY = window.scrollY;
+    const prev = { position: body.style.position, top: body.style.top, left: body.style.left, right: body.style.right, width: body.style.width, overflow: body.style.overflow };
+    body.style.position = 'fixed';
+    body.style.top = `-${scrollY}px`;
+    body.style.left = '0';
+    body.style.right = '0';
+    body.style.width = '100%';
+    body.style.overflow = 'hidden';
     panel.current?.focus({ preventScroll: true });
     return () => {
       window.removeEventListener('keydown', onKey);
-      document.body.style.overflow = prev;
+      Object.assign(body.style, prev);
+      // Instant: the page has `scroll-behavior: smooth` for anchor links, which would animate the restore.
+      window.scrollTo({ top: scrollY, behavior: 'instant' });
     };
   }, [open, onClose]);
 

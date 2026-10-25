@@ -169,19 +169,20 @@ export function EclipseHero() {
           Built for ZECATHON 2026 · Private Markets
         </p>
         <h1 id="eclipse-title" className={s.title}>
-          <span className={s.in3}>
-            <span className={s.srOnly}>Rent a GPU Without </span>
-            <span aria-hidden>
-              Rent a{' '}
-              <span className={s.rotor}>
-                <span key={word} className={s.rotorWord}>
-                  {WORDS[word]}
-                </span>
-              </span>{' '}
-              Without{' '}
-            </span>
+          {/* Screen readers get the one full sentence; the animated words are presentation only. */}
+          <span className={s.srOnly}>Rent a GPU without telling the world</span>
+          <span className={s.in3} aria-hidden>
+            Rent a{' '}
+            <span className={s.rotor}>
+              <span key={word} className={s.rotorWord}>
+                {WORDS[word]}
+              </span>
+            </span>{' '}
+            Without{' '}
           </span>
-          <span className={`${s.in4} ${s.glint}`}>Telling the World</span>
+          <span className={`${s.in4} ${s.glint}`} aria-hidden>
+            Telling the World
+          </span>
         </h1>
         <p className={`${s.sub} ${s.in5}`}>
           Sealed requests, sealed bids and pay-per-interval in shielded ZEC.
