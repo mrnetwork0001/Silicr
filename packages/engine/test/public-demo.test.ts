@@ -93,6 +93,80 @@ describe('public demo: status', () => {
   });
 });
 
+/** Collect SSE `status` events until `count` of them arrived (or timeout). */
+async function statusEvents(base: string, count: number, timeoutMs = 10_000): Promise<StatusDto[]> {
+  const ctl = new AbortController();
+  const timer = setTimeout(() => ctl.abort(), timeoutMs);
+  const res = await fetch(`${base}/api/events`, { signal: ctl.signal });
+  expect(res.headers.get('content-type')).toMatch(/text\/event-stream/);
+  const out: StatusDto[] = [];
+  const reader = res.body!.getReader();
+  const dec = new TextDecoder();
+  let buf = '';
+  try {
+    while (out.length < count) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buf += dec.decode(value, { stream: true });
+      let i: number;
+      while ((i = buf.indexOf('\n\n')) >= 0) {
+        const chunk = buf.slice(0, i);
+        buf = buf.slice(i + 2);
+        for (const line of chunk.split('\n')) {
+          if (!line.startsWith('data: ')) continue;
+          const e = JSON.parse(line.slice(6)) as { type: string; status?: StatusDto };
+          if (e.type === 'status' && e.status) out.push(e.status);
+        }
+      }
+    }
+  } catch {
+    // aborted
+  } finally {
+    clearTimeout(timer);
+    ctl.abort();
+  }
+  return out;
+}
+
+/** Everything but the fields the simulated chain moves between two reads. */
+const stable = ({ height: _h, balance: _b, ...rest }: StatusDto) => rest;
+
+describe('public demo: SSE status events', () => {
+  it('the status event on /api/events is the same DTO as GET /api/status (publicDemo, presets, limits, demoExhausted)', async () => {
+    // The terminal races GET /api/status against the SSE snapshot: both must carry the demo view, or
+    // it renders the full job form and no demo banner (seen on the hosted mainnet demo).
+    for (const d of [buyerD, providerD]) {
+      const get = (await call<StatusDto>(d.url, 'GET', '/api/status')).body;
+      const [snapshot] = await statusEvents(d.url, 1);
+      expect(snapshot, d === buyerD ? 'buyer' : 'provider').toBeDefined();
+      expect(Object.keys(snapshot!).sort()).toEqual(Object.keys(get).sort());
+      expect(stable(snapshot!)).toEqual(stable(get));
+    }
+    const [b] = await statusEvents(buyerD.url, 1);
+    expect(b!.publicDemo).toBe(true);
+    expect(b!.demoMode).toBe(true);
+    expect(b!.presets).toEqual([{ id: 'tiny-train', title: 'Tiny', description: 'd', command: ['python3', 'train.py'], gpu: 'a100', durationS: 60 }]);
+    expect(b!.publicDemoLimits).toEqual({ maxDurationS: 900, maxCount: 1, maxActive: 1, perIpPerHour: 3, maxPricePerHourZats: '50000000', minWorstCaseZats: '873334' });
+    expect(b!.demoExhausted).toBe(false);
+  });
+
+  it('the periodic status push carries the demo view too', async () => {
+    // A fast status timer: the simulated chain's height moves, so a second (pushed) status event follows the snapshot.
+    const d = await startDaemon({ node: w.buyer, port: 0, publicDemo: { presets }, statusIntervalMs: 50 });
+    try {
+      const events = await statusEvents(d.url, 2);
+      expect(events.length).toBe(2);
+      const get = (await call<StatusDto>(d.url, 'GET', '/api/status')).body;
+      for (const e of events) {
+        expect(Object.keys(e).sort()).toEqual(Object.keys(get).sort());
+        expect(stable(e)).toEqual(stable(get));
+      }
+    } finally {
+      await d.close();
+    }
+  });
+});
+
 describe('public demo: POST /api/rfqs', () => {
   it('refuses a folder/command job, unknown presets and anything over the limits', async () => {
     const bad = async (body: unknown, re: RegExp) => {

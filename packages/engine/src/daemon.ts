@@ -216,8 +216,18 @@ export async function startDaemon(o: DaemonOptions): Promise<RunningDaemon> {
       } },
   ];
 
+  /** The StatusDto every surface serves: GET /api/status, the SSE snapshot and every pushed `status` event. */
   async function status(): Promise<StatusDto> {
-    const s = await node.status();
+    return statusDto(await node.status());
+  }
+
+  /**
+   * The public-demo view of a raw node status. One function for every surface, so the terminal sees
+   * the same `publicDemo`, `presets`, `publicDemoLimits` and `demoExhausted` whether it read
+   * GET /api/status or the SSE stream (the stream used to push the raw status: a terminal whose SSE
+   * snapshot arrived before the GET rendered the full job form and no demo banner).
+   */
+  function statusDto(s: StatusDto): StatusDto {
     if (!demo) return s;
     // Every party of a public demo runs on the one host, so the terminal may read all their views (Leak Inspector).
     const out: StatusDto = { ...s, publicDemo: true, demoMode: true };
@@ -406,15 +416,15 @@ export async function startDaemon(o: DaemonOptions): Promise<RunningDaemon> {
       if (!c.res.writableEnded) c.res.write(`data: ${JSON.stringify(e)}\n\n`);
     };
     sse.add(c.res);
-    void node
-      .status()
+    void status()
       .then((status) => {
         write({ type: 'status', status });
         if (node instanceof BuyerNode) for (const rfq of node.listRfqs().slice(0, 20)) write({ type: 'rfq.updated', rfq });
         else for (const job of node.listJobs().slice(0, 20)) write({ type: 'job.updated', job });
       })
       .catch(() => undefined);
-    const off = node.on(write);
+    // The node's own status events (the provider after a policy change) go through the same DTO.
+    const off = node.on((e) => write(e.type === 'status' ? { type: 'status', status: statusDto(e.status) } : e));
     const ping = setInterval(() => {
       if (!c.res.writableEnded) c.res.write(': ping\n\n');
     }, 15000);
@@ -484,8 +494,7 @@ export async function startDaemon(o: DaemonOptions): Promise<RunningDaemon> {
   let lastStatus = '';
   const statusTimer = setInterval(() => {
     if (sse.size === 0) return;
-    void node
-      .status()
+    void status()
       .then((status) => {
         const s = JSON.stringify(status);
         if (s === lastStatus) return;
