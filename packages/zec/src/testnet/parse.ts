@@ -158,10 +158,20 @@ export function zats(v: unknown, field = 'zats'): bigint {
   throw new SidecarProtocolError(`expected decimal zatoshi string for ${field}, got ${JSON.stringify(v)}`);
 }
 
+/**
+ * A memo field as the sidecar reports it, always returned as the full 512 bytes. A memo shorter
+ * than that is the same memo with its ZIP 302 null padding stripped (librustzcash's
+ * `MemoBytes::as_slice()` does exactly that), so it is padded back here rather than refused: a
+ * refused memo would have dropped the whole poll, Silicr messages included. Only a memo longer
+ * than 512 bytes is malformed.
+ */
 export function memoFromHex(h: string): Uint8Array {
   const bytes = hex.decode(h.toLowerCase());
-  if (bytes.length !== MEMO_SIZE) throw new SidecarProtocolError(`memo must be ${MEMO_SIZE} bytes, got ${bytes.length}`);
-  return bytes;
+  if (bytes.length > MEMO_SIZE) throw new SidecarProtocolError(`memo must be at most ${MEMO_SIZE} bytes, got ${bytes.length}`);
+  if (bytes.length === MEMO_SIZE) return bytes;
+  const full = new Uint8Array(MEMO_SIZE);
+  full.set(bytes);
+  return full;
 }
 
 export function memoToHex(m: Uint8Array): string {
@@ -199,6 +209,31 @@ export function parseNote(v: unknown): TestnetReceivedNote {
 export function parsePollResult(v: unknown): TestnetReceivedNote[] {
   if (!isObj(v) || !Array.isArray(v['notes'])) throw new SidecarProtocolError('poll result must have notes[]');
   return v['notes'].map(parseNote);
+}
+
+/**
+ * How fresh a read-only answer (poll, height) is. `stale` means the sidecar could not reach the
+ * light-wallet server and answered from what the wallet already holds; `syncError` says why.
+ * Older sidecars send none of these fields: then the answer is taken as fresh.
+ */
+export interface Freshness {
+  stale: boolean;
+  syncError: string | null;
+  /** Milliseconds since the wallet last synced; null before the first sync. */
+  syncAgeMs: number | null;
+  /** The wallet's last known chain tip (poll answers only). */
+  tip: number | null;
+}
+
+export function parseFreshness(v: unknown): Freshness {
+  if (!isObj(v)) throw new SidecarProtocolError('sidecar answer must be an object');
+  const err = v['syncError'];
+  return {
+    stale: v['stale'] === true,
+    syncError: typeof err === 'string' && err !== '' ? err : null,
+    syncAgeMs: optNum(v, 'syncAgeMs'),
+    tip: optNum(v, 'tip'),
+  };
 }
 
 export function parseBalance(v: unknown): TestnetBalance {

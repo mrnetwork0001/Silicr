@@ -9,6 +9,7 @@ import {
   TESTNET_CAPABILITIES,
   TxNotKnownError,
   memoFromHex,
+  parseFreshness,
   memoToHex,
   parseBalance,
   parseNote,
@@ -184,8 +185,37 @@ describe('parsing zec-sidecar output', () => {
     expect(n.valuePool).toBe('ironwood');
     expect(parsePollResult({ notes: [noteJson, { ...noteJson, index: 2, height: null, source: 'mempool' }] })[1]?.height).toBeNull();
   });
+  it('pads a memo the sidecar reports without its null padding (never drops a note for memo length)', () => {
+    // librustzcash's MemoBytes::as_slice() strips trailing zeros: a mempool note's memo came back short.
+    const frame = new Uint8Array([0xff, ...new TextEncoder().encode('SLC1\x01\x04 short')]);
+    const n = parseNote({ ...noteJson, memoHex: Buffer.from(frame).toString('hex') });
+    expect(n.memo.length).toBe(MEMO_SIZE);
+    expect(n.memo.subarray(0, frame.length)).toEqual(frame);
+    expect(n.memo.subarray(frame.length).every((b) => b === 0)).toBe(true);
+    expect(memoFromHex('')).toEqual(new Uint8Array(MEMO_SIZE));
+    const empty = new Uint8Array(MEMO_SIZE);
+    empty[0] = 0xf6;
+    expect(memoFromHex('f6')).toEqual(empty); // the ZIP 302 "no memo" marker, as the wallet DB stores it
+
+    const batch = parsePollResult({ notes: [{ ...noteJson, memoHex: 'ff' }, noteJson] });
+    expect(batch).toHaveLength(2);
+    expect(batch[0]!.memo[0]).toBe(0xff);
+    // Longer than a memo field is the only malformed case.
+    expect(() => memoFromHex('00'.repeat(MEMO_SIZE + 1))).toThrow(SidecarProtocolError);
+  });
+  it('reads the freshness of an answer (absent on older sidecars = fresh)', () => {
+    expect(parseFreshness({ notes: [] })).toEqual({ stale: false, syncError: null, syncAgeMs: null, tip: null });
+    expect(parseFreshness({ notes: [], tip: 10, stale: true, syncError: 'GetLatestBlock: connection reset', syncAgeMs: 1234 })).toEqual({
+      stale: true,
+      syncError: 'GetLatestBlock: connection reset',
+      syncAgeMs: 1234,
+      tip: 10,
+    });
+    expect(parseFreshness({ height: 5, stale: false, syncError: null, syncAgeMs: 0 }).stale).toBe(false);
+    expect(() => parseFreshness(null)).toThrow(SidecarProtocolError);
+  });
   it('rejects malformed notes', () => {
-    expect(() => parseNote({ ...noteJson, memoHex: '00' })).toThrow(SidecarProtocolError);
+    expect(() => parseNote({ ...noteJson, memoHex: '00'.repeat(MEMO_SIZE + 1) })).toThrow(SidecarProtocolError);
     expect(() => parseNote({ ...noteJson, txid: 'xyz' })).toThrow(SidecarProtocolError);
     expect(() => parseNote({ ...noteJson, zats: 1.5 })).toThrow(SidecarProtocolError);
     expect(() => parseNote({ ...noteJson, valuePool: 'sapling' })).toThrow(SidecarProtocolError);

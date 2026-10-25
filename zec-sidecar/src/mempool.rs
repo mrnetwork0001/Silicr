@@ -22,6 +22,11 @@ use crate::{addr::encode_orchard, remote::Server};
 
 /// Forget cached notes we haven't seen in the mempool for this long (expired or dropped).
 const STALE_AFTER: Duration = Duration::from_secs(45 * 60);
+/// GetLatestBlock at the head of each stream session must answer within this.
+const HEAD_TIMEOUT: Duration = Duration::from_secs(20);
+/// The server closes the stream at every block (~75 s on mainnet, 25 s on testnet). Nothing for
+/// this long means a dead connection the keepalive missed: reconnect.
+const STREAM_IDLE_TIMEOUT: Duration = Duration::from_secs(15 * 60);
 
 #[derive(Clone, Debug)]
 pub struct MempoolNote {
@@ -72,10 +77,14 @@ pub fn spawn(
                         s.connected = true;
                     }
                     loop {
-                        let tip = match client.get_latest_block(service::ChainSpec::default()).await {
-                            Ok(b) => BlockHeight::from_u32(b.into_inner().height as u32),
-                            Err(e) => {
+                        let tip = match tokio::time::timeout(HEAD_TIMEOUT, client.get_latest_block(service::ChainSpec::default())).await {
+                            Ok(Ok(b)) => BlockHeight::from_u32(b.into_inner().height as u32),
+                            Ok(Err(e)) => {
                                 warn!("mempool watcher: GetLatestBlock failed: {e}");
+                                break;
+                            }
+                            Err(_) => {
+                                warn!("mempool watcher: GetLatestBlock timed out after {HEAD_TIMEOUT:?}; reconnecting");
                                 break;
                             }
                         };
@@ -91,7 +100,16 @@ pub fn spawn(
                         }
                         let mut seen = 0usize;
                         let mut ended_cleanly = true;
-                        while let Some(item) = stream.next().await {
+                        loop {
+                            let item = match tokio::time::timeout(STREAM_IDLE_TIMEOUT, stream.next()).await {
+                                Ok(Some(item)) => item,
+                                Ok(None) => break,
+                                Err(_) => {
+                                    warn!("mempool watcher: nothing from the stream for {STREAM_IDLE_TIMEOUT:?}; reconnecting");
+                                    ended_cleanly = false;
+                                    break;
+                                }
+                            };
                             match item {
                                 Ok(raw) => {
                                     seen += 1;
@@ -125,6 +143,13 @@ pub fn spawn(
             backoff = (backoff * 2).min(Duration::from_secs(60));
         }
     });
+}
+
+/// The whole 512-byte memo field. `MemoBytes::as_slice()` strips the null padding, which made a
+/// mempool note's memo shorter than the wallet-DB form of the same note and failed the TypeScript
+/// side's "memo must be 512 bytes" check for every note still in the mempool.
+pub(crate) fn full_memo(memo: &zcash_protocol::memo::MemoBytes) -> Vec<u8> {
+    memo.as_array().to_vec()
 }
 
 fn handle(
@@ -174,12 +199,30 @@ fn handle(
                     index: out.index(),
                     to_address: encode_orchard(params, note.recipient()),
                     zats: note.value().inner(),
-                    memo: out.memo().as_slice().to_vec(),
+                    memo: full_memo(out.memo()),
                     value_pool: pool_name,
                     last_seen: now,
                 }
             });
             entry.last_seen = now;
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use zcash_protocol::memo::MemoBytes;
+
+    #[test]
+    fn mempool_memos_keep_their_padding() {
+        let mut frame = vec![0xffu8];
+        frame.extend_from_slice(b"SLC1\x01\x04 short frame");
+        let memo = MemoBytes::from_bytes(&frame).unwrap();
+        assert!(memo.as_slice().len() < 512, "as_slice strips the padding (what the bug relied on)");
+        let full = full_memo(&memo);
+        assert_eq!(full.len(), 512);
+        assert_eq!(&full[..frame.len()], &frame[..]);
+        assert!(full[frame.len()..].iter().all(|b| *b == 0));
     }
 }
