@@ -31,11 +31,13 @@ import { toOrchardOnly } from '../guard.ts';
 import {
   memoToHex,
   parseBalance,
+  parseFreshness,
   parseLedger,
   parsePollResult,
   parseSendResult,
   parseTxView,
   parseViewingKey,
+  type Freshness,
   type Ledger,
   type SendReport,
   type TestnetBalance,
@@ -74,7 +76,10 @@ export type TestnetConfig = Extract<BackendConfig, { kind: 'testnet' }>;
  * - create: create the wallet if dataDir has none (default true)
  * - birthday: birthday height for a new wallet (default tip - 100)
  * - sidecarPath: zec-sidecar binary (default $SILICR_ZEC_SIDECAR, else <repo>/zec-sidecar/target/release/zec-sidecar)
- * - startupTimeoutMs (180000), requestTimeoutMs (60000), sendTimeoutMs (300000)
+ * - startupTimeoutMs (180000), requestTimeoutMs (20000), sendTimeoutMs (300000). The sidecar bounds
+ *   its own syncs well inside requestTimeoutMs and answers poll()/height() from local state (flagged
+ *   stale, see `chainHealth`) while the light-wallet server is unreachable, so a server outage never
+ *   hangs the caller.
  * - syncIntervalMs (15000): background sync cadence; poll() also syncs if the last sync is > 2 s old
  * - trustedConfirmations (3) / untrustedConfirmations (10): ZIP 315 spendability policy
  * - targetNoteCount (4), minSplitZats (1000000): change splitting so back-to-back sends don't wait on change
@@ -188,7 +193,7 @@ export function resolveOptions(config: SidecarConfig): ResolvedOptions {
     create: create ?? true,
     sidecarPath: optString(config, 'sidecarPath') ?? process.env['SILICR_ZEC_SIDECAR'] ?? defaultSidecarPath(),
     startupTimeoutMs: optNumber(config, 'startupTimeoutMs') ?? 180_000,
-    requestTimeoutMs: optNumber(config, 'requestTimeoutMs') ?? 60_000,
+    requestTimeoutMs: optNumber(config, 'requestTimeoutMs') ?? 20_000,
     sendTimeoutMs: optNumber(config, 'sendTimeoutMs') ?? 300_000,
     targetNoteCount: optNumber(config, 'targetNoteCount') ?? DEFAULT_TARGET_NOTE_COUNT,
     guard: (guard as ResolvedOptions['guard'] | undefined) ?? toOrchardOnly,
@@ -274,6 +279,7 @@ export class SidecarBackend implements ZecBackend {
   private restarting: Promise<Sidecar> | null = null;
   private lastRestart = 0;
   private closed = false;
+  private health: ChainHealth = { stale: false, syncError: null, since: 0 };
 
   constructor(opts: ResolvedOptions, sidecar: Sidecar) {
     this.opts = opts;
@@ -301,6 +307,22 @@ export class SidecarBackend implements ZecBackend {
   /** Watch-only: opened from a viewing key. It sees everything and can send nothing. */
   get readOnly(): boolean {
     return this.opts.viewingKey !== undefined || this.sidecar.ready.viewOnly === true;
+  }
+
+  /**
+   * Whether the last poll()/height() answer came from local state because the light-wallet
+   * server was unreachable (`stale`), with the sidecar's last error. Logged on every change.
+   */
+  get chainHealth(): ChainHealth {
+    return { ...this.health };
+  }
+
+  private noteFreshness(f: Freshness): void {
+    if (f.stale === this.health.stale && f.syncError === this.health.syncError) return;
+    const was = this.health.stale;
+    this.health = { stale: f.stale, syncError: f.syncError, since: Date.now() };
+    if (f.stale) this.opts.onLog?.(`[silicr] wallet answering from local state (light-wallet server unreachable): ${f.syncError ?? 'unknown error'}`);
+    else if (was) this.opts.onLog?.('[silicr] light-wallet server reachable again; wallet answers are fresh');
   }
 
   private async live(): Promise<Sidecar> {
@@ -341,9 +363,12 @@ export class SidecarBackend implements ZecBackend {
     return parseBalance(await this.call('balance'));
   }
 
+  /** The chain tip; the last known one (flagged in `chainHealth`) while the server is unreachable. */
   async height(): Promise<number> {
-    const r = (await this.call('height')) as { height?: unknown };
+    const raw = await this.call('height');
+    const r = raw as { height?: unknown };
     if (typeof r.height !== 'number') throw new Error('height: sidecar returned no height');
+    this.noteFreshness(parseFreshness(raw));
     return r.height;
   }
 
@@ -355,9 +380,15 @@ export class SidecarBackend implements ZecBackend {
     return parseSendResult(await this.call('send', { outputs: prepared }, this.opts.sendTimeoutMs));
   }
 
+  /**
+   * Notes the wallet holds (mined since `sinceHeight`, plus every unconfirmed one). Never waits on
+   * the light-wallet server: a failed or slow sync answers from local state, flagged in `chainHealth`.
+   */
   async poll(sinceHeight: number): Promise<TestnetReceivedNote[]> {
     if (!Number.isSafeInteger(sinceHeight) || sinceHeight < 0) throw new RangeError('poll: sinceHeight must be a non-negative integer');
-    const notes = parsePollResult(await this.call('poll', { sinceHeight }));
+    const raw = await this.call('poll', { sinceHeight });
+    const notes = parsePollResult(raw);
+    this.noteFreshness(parseFreshness(raw));
     // Label notes with the guard's canonical encoding, the same form address()/newAddress() return.
     for (const n of notes) n.toAddress = this.opts.guard(n.toAddress, this.network);
     return notes;
@@ -412,6 +443,14 @@ export class SidecarBackend implements ZecBackend {
     await this.sidecar.close();
   }
 }
+/** SidecarBackend.chainHealth: stale answers while the light-wallet server is unreachable. */
+export interface ChainHealth {
+  stale: boolean;
+  syncError: string | null;
+  /** When this state began (unix ms); 0 if nothing has been observed yet. */
+  since: number;
+}
+
 /** Old name of SidecarBackend. */
 export const TestnetBackend = SidecarBackend;
 export type TestnetBackend = SidecarBackend;

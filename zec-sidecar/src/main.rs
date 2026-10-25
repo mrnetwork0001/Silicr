@@ -29,8 +29,17 @@ use tracing::{error, info, warn};
 
 use crate::{
     remote::{Server, chain_name, default_server, parse_network},
-    wallet::{OutputReq, Wallet, WalletError},
+    wallet::{BOUNDED_BATCH_BLOCKS, OutputReq, Wallet, WalletError},
 };
+
+/// Budgets for the syncs that run inside the request loop. Requests queue behind a sync, so the
+/// loop is never held for longer than this; after a failure the wallet backs off and answers
+/// from local state at once (see Wallet::sync_bounded).
+const INLINE_SYNC_BUDGET: Duration = Duration::from_secs(8);
+/// A send needs a fresh anchor; it may wait a little longer, but not forever.
+const SEND_SYNC_BUDGET: Duration = Duration::from_secs(20);
+/// The explicit `sync` request (silicr sync) is allowed a real catch-up.
+const EXPLICIT_SYNC_BUDGET: Duration = Duration::from_secs(290);
 
 #[derive(Parser)]
 #[command(name = "zec-sidecar", version, about = "Silicr's Zcash light wallet, mainnet or testnet (Orchard receivers, Ironwood spends only)")]
@@ -446,10 +455,13 @@ async fn serve(args: ServeArgs) -> anyhow::Result<()> {
             }
             _ = tick.tick() => {
                 if w.sync_age().is_none_or(|a| a >= Duration::from_millis(args.sync_interval_ms))
-                    && let Err(e) = w.sync().await { warn!("background sync failed: {e:#}"); }
+                    && w.sync_backoff_left().is_none()
+                    && let Err(e) = w.sync_bounded(INLINE_SYNC_BUDGET, BOUNDED_BATCH_BLOCKS).await { warn!("background sync failed: {e:#}"); }
             }
             _ = new_block.notified() => {
-                if let Err(e) = w.sync().await { warn!("sync after new block failed: {e:#}"); }
+                // The mempool stream closed on a new block: the server is reachable, so skip any backoff.
+                w.clear_sync_backoff();
+                if let Err(e) = w.sync_bounded(INLINE_SYNC_BUDGET, BOUNDED_BATCH_BLOCKS).await { warn!("sync after new block failed: {e:#}"); }
             }
             _ = sigterm_recv(&mut sigterm) => { info!("SIGTERM; shutting down"); break; }
         }
@@ -465,17 +477,34 @@ async fn sigterm_recv(s: &mut tokio::signal::unix::Signal) {
     s.recv().await;
 }
 
-/// Syncs first unless the last sync is fresher than `max_age`. Sync failures are logged
-/// rather than failing read-only calls; the background loop keeps retrying.
+/// Syncs first unless the last sync is fresher than `max_age`, within a budget. Read-only calls
+/// never fail on a sync error: they answer from local state, and while the wallet is backing off
+/// after a failure they don't even try. A send (`strict`) must have a fresh anchor and tells the
+/// caller when it can't get one; the engine retries the send with its own backoff.
 async fn ensure_fresh(w: &mut Wallet, max_age: Duration, strict: bool) -> Result<(), WalletError> {
-    if w.sync_age().is_none_or(|a| a >= max_age)
-        && let Err(e) = w.sync().await {
-            if strict {
-                return Err(WalletError::Other(e.context("sync before send failed")));
-            }
-            warn!("sync failed, answering from local state: {e:#}");
-        }
+    if w.sync_age().is_some_and(|a| a < max_age) {
+        return Ok(());
+    }
+    if !strict && w.sync_backoff_left().is_some() {
+        return Ok(()); // answered from local state; the background loop retries when the backoff ends
+    }
+    let budget = if strict { SEND_SYNC_BUDGET } else { INLINE_SYNC_BUDGET };
+    if let Err(e) = w.sync_bounded(budget, BOUNDED_BATCH_BLOCKS).await
+        && strict
+    {
+        return Err(WalletError::Other(e.context("sync before send failed")));
+    }
     Ok(())
+}
+
+/// What a read-only answer says about its freshness: `stale` when the wallet could not reach the
+/// server and answered from local state, with the last error.
+fn freshness(w: &Wallet, stale: bool) -> Value {
+    json!({
+        "stale": stale,
+        "syncAgeMs": w.sync_age().map(|d| d.as_millis() as u64),
+        "syncError": if stale { w.sync_error() } else { None },
+    })
 }
 
 async fn handle(w: &mut Wallet, req: &Request) -> Result<Value, WalletError> {
@@ -497,6 +526,8 @@ async fn handle(w: &mut Wallet, req: &Request) -> Result<Value, WalletError> {
                 "viewOnly": w.view_only(),
                 "tip": fully,
                 "lastSyncMsAgo": w.sync_age().map(|d| d.as_millis() as u64),
+                "syncError": w.sync_error(),
+                "syncBackoffMs": w.sync_backoff_left().map(|d| d.as_millis() as u64),
                 "mempool": {"connected": mp.0, "sessions": mp.1, "cachedNotes": mp.2},
             }))
         }
@@ -505,8 +536,13 @@ async fn handle(w: &mut Wallet, req: &Request) -> Result<Value, WalletError> {
             let (address, index) = w.new_address()?;
             Ok(json!({ "address": address, "diversifierIndex": index }))
         }
-        "height" => Ok(json!({ "height": w.tip().await? })),
-        "sync" => Ok(serde_json::to_value(w.sync().await?).map_err(anyhow::Error::from)?),
+        "height" => {
+            let (height, stale) = w.tip_or_stale(INLINE_SYNC_BUDGET).await?;
+            let mut v = freshness(w, stale);
+            v["height"] = json!(height);
+            Ok(v)
+        }
+        "sync" => Ok(serde_json::to_value(w.sync_bounded(EXPLICIT_SYNC_BUDGET, 1000).await?).map_err(anyhow::Error::from)?),
         "balance" => {
             ensure_fresh(w, Duration::from_secs(10), false).await?;
             Ok(serde_json::to_value(w.balance()?).map_err(anyhow::Error::from)?)
@@ -515,7 +551,10 @@ async fn handle(w: &mut Wallet, req: &Request) -> Result<Value, WalletError> {
             let since = p.get("sinceHeight").and_then(Value::as_u64).unwrap_or(0) as u32;
             ensure_fresh(w, Duration::from_secs(2), false).await?;
             let notes = w.poll(since)?;
-            Ok(json!({ "notes": notes, "tip": w.last_known_tip() }))
+            let mut v = freshness(w, w.sync_error().is_some());
+            v["notes"] = serde_json::to_value(notes).map_err(anyhow::Error::from)?;
+            v["tip"] = json!(w.last_known_tip());
+            Ok(v)
         }
         "send" => {
             let outs = p

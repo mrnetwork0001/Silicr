@@ -86,7 +86,14 @@ const DB_FILE: &str = "data.sqlite";
 const LOCK_FILE: &str = "sidecar.lock";
 
 const BATCH_BLOCKS: u32 = 1000;
+/// Batch size for bounded syncs (poll, balance, the background tick): small enough that one batch
+/// fits the budget, so a wallet that is far behind still catches up a batch per attempt.
+pub const BOUNDED_BATCH_BLOCKS: u32 = 100;
 const REORG_MARGIN: u32 = 10;
+/// Backoff after a failed sync: nothing asks the server again before it expires, and every
+/// request in between is answered from local state at once (poll, balance, height, ledger).
+const SYNC_BACKOFF_MIN: Duration = Duration::from_secs(2);
+const SYNC_BACKOFF_MAX: Duration = Duration::from_secs(60);
 /// Hard cap on payments in one transaction (proving time and tx size grow linearly).
 pub const MAX_OUTPUTS: usize = 50;
 /// Legacy-Orchard note indices are offset so (txid, index) stays unique across pools.
@@ -252,6 +259,15 @@ pub struct Wallet {
     pub server_info: service::LightdInfo,
     pub mempool: mempool::Shared,
     last_sync: Option<Instant>,
+    /// Set after a transport failure: the next sync opens a fresh channel first.
+    reconnect_pending: bool,
+    /// Consecutive sync failures (progress resets it) and when the server may be asked again.
+    sync_failures: u32,
+    sync_retry_at: Option<Instant>,
+    /// The last sync failure, until a sync succeeds (reported with poll/height answers).
+    last_sync_error: Option<String>,
+    /// Batches applied so far: a bounded sync that moved this is progress, not a failure.
+    sync_batches: u64,
     subtree_roots_loaded: bool,
     chain_tip: Option<BlockHeight>,
     birthday: u32,
@@ -451,6 +467,11 @@ impl Wallet {
             server_info,
             mempool,
             last_sync: None,
+            reconnect_pending: false,
+            sync_failures: 0,
+            sync_retry_at: None,
+            last_sync_error: None,
+            sync_batches: 0,
             subtree_roots_loaded: false,
             chain_tip: None,
             birthday: meta.birthday,
@@ -598,6 +619,109 @@ impl Wallet {
         self.chain_tip.map(u32::from)
     }
 
+    /// The last sync failure, if the wallet is currently answering from local state.
+    pub fn sync_error(&self) -> Option<&str> {
+        self.last_sync_error.as_deref()
+    }
+
+    /// Time left before the server may be asked again after a failure; None when it may be asked now.
+    pub fn sync_backoff_left(&self) -> Option<Duration> {
+        let at = self.sync_retry_at?;
+        let now = Instant::now();
+        (at > now).then(|| at - now)
+    }
+
+    /// The mempool watcher reconnected or a block arrived: the server is reachable, ask it now.
+    pub fn clear_sync_backoff(&mut self) {
+        self.sync_retry_at = None;
+    }
+
+    fn note_sync_failure(&mut self, e: &anyhow::Error) {
+        self.sync_failures = self.sync_failures.saturating_add(1);
+        let wait = SYNC_BACKOFF_MIN.saturating_mul(1u32 << (self.sync_failures - 1).min(5)).min(SYNC_BACKOFF_MAX);
+        self.sync_retry_at = Some(Instant::now() + wait);
+        self.reconnect_pending = true;
+        self.last_sync_error = Some(format!("{e:#}"));
+        warn!("sync failed, answering from local state ({} in a row; next attempt in {wait:?}): {e:#}", self.sync_failures);
+    }
+
+    fn note_sync_success(&mut self) {
+        if self.sync_failures > 0 {
+            info!("light-wallet server reachable again after {} failed sync(s)", self.sync_failures);
+        }
+        self.sync_failures = 0;
+        self.sync_retry_at = None;
+        self.last_sync_error = None;
+    }
+
+    /// Opens a fresh channel after a transport failure: a half-open connection (reset, network
+    /// change, laptop sleep) is never reused.
+    async fn reconnect_if_needed(&mut self) -> anyhow::Result<()> {
+        if !self.reconnect_pending {
+            return Ok(());
+        }
+        self.client = self.opts.server.connect().await.context("reconnecting to the light-wallet server")?;
+        self.reconnect_pending = false;
+        info!("reconnected to {}", self.opts.server.uri());
+        Ok(())
+    }
+
+    /// A sync that gives up after `budget`, with backoff on failure. Every await in `sync` sits
+    /// between complete database writes, so cancelling it mid-way leaves the wallet consistent and
+    /// the next attempt carries on from the last applied batch. A cancelled attempt that applied
+    /// at least one batch counts as progress, not as a failure.
+    pub async fn sync_bounded(&mut self, budget: Duration, batch: u32) -> anyhow::Result<SyncReport> {
+        let before = self.sync_batches;
+        let attempt = async {
+            self.reconnect_if_needed().await?;
+            self.sync_with(batch).await
+        };
+        match tokio::time::timeout(budget, attempt).await {
+            Ok(Ok(r)) => {
+                self.note_sync_success();
+                Ok(r)
+            }
+            Ok(Err(e)) => {
+                self.note_sync_failure(&e);
+                Err(e)
+            }
+            Err(_) => {
+                let e = anyhow!("sync did not finish within {budget:?} (the light-wallet server is slow or unreachable)");
+                if self.sync_batches > before {
+                    // The server answers, just slowly: no backoff, the next call continues the catch-up.
+                    self.reconnect_pending = false;
+                    debug!("{e:#}; {} batch(es) applied, continuing next time", self.sync_batches - before);
+                } else {
+                    self.note_sync_failure(&e);
+                }
+                Err(e)
+            }
+        }
+    }
+
+    /// The chain tip from the server, bounded; falls back to the last known tip (marked stale)
+    /// while the server is unreachable or in backoff. Errors only when nothing is known yet.
+    pub async fn tip_or_stale(&mut self, budget: Duration) -> anyhow::Result<(u32, bool)> {
+        if self.sync_backoff_left().is_none() {
+            let attempt = async {
+                self.reconnect_if_needed().await?;
+                self.tip().await
+            };
+            match tokio::time::timeout(budget, attempt).await {
+                Ok(Ok(h)) => {
+                    self.note_sync_success();
+                    return Ok((h, false));
+                }
+                Ok(Err(e)) => self.note_sync_failure(&e),
+                Err(_) => self.note_sync_failure(&anyhow!("GetLatestBlock did not answer within {budget:?}")),
+            }
+        }
+        match self.last_known_tip() {
+            Some(h) => Ok((h, true)),
+            None => Err(anyhow!("chain tip unknown: {}", self.last_sync_error.as_deref().unwrap_or("no sync yet"))),
+        }
+    }
+
     // ------------------------------------------------------------------ sync
 
     async fn update_subtree_roots(&mut self) -> anyhow::Result<()> {
@@ -736,6 +860,10 @@ impl Wallet {
     }
 
     pub async fn sync(&mut self) -> anyhow::Result<SyncReport> {
+        self.sync_with(BATCH_BLOCKS).await
+    }
+
+    async fn sync_with(&mut self, batch_blocks: u32) -> anyhow::Result<SyncReport> {
         let started = Instant::now();
         if !self.subtree_roots_loaded {
             self.update_subtree_roots().await.context("downloading note commitment subtree roots")?;
@@ -762,7 +890,7 @@ impl Wallet {
             let ranges = self.db.suggest_scan_ranges()?;
             let Some(range) = ranges.into_iter().next() else { break };
             let start = range.block_range().start;
-            let end = std::cmp::min(range.block_range().end, start + BATCH_BLOCKS);
+            let end = std::cmp::min(range.block_range().end, start + batch_blocks.max(1));
             if end <= start {
                 break;
             }
@@ -784,6 +912,7 @@ impl Wallet {
             match scan_cached_blocks(&self.params, &source, &mut self.db, start, &chain_state, n) {
                 Ok(_) => {
                     scanned += n as u32;
+                    self.sync_batches += 1;
                     if let Err(e) = self.record_compact_summaries(&source.0, start, end) {
                         warn!("could not keep compact-block summaries: {e:#}");
                     }

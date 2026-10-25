@@ -49,6 +49,10 @@ pub fn parse_network(s: &str) -> anyhow::Result<Network> {
 /// TCP connect (direct) or full SOCKS handshake (proxied; Tor circuits can take a while).
 const CONNECT_TIMEOUT_DIRECT: Duration = Duration::from_secs(15);
 const CONNECT_TIMEOUT_PROXIED: Duration = Duration::from_secs(45);
+/// Per-request bound for unary calls and the head of streaming calls. A server that stops
+/// answering (connection reset, half-open TCP after a network change) fails a call within this
+/// instead of hanging until the OS gives up; the wallet then reconnects with backoff.
+pub const REQUEST_TIMEOUT: Duration = Duration::from_secs(20);
 
 #[derive(Clone, Debug)]
 pub struct Server {
@@ -153,7 +157,7 @@ impl Server {
 
     /// Connects with a per-request timeout (unary calls and the head of streaming calls).
     pub async fn connect(&self) -> anyhow::Result<Client> {
-        let channel = self.channel(Some(Duration::from_secs(60))).await?;
+        let channel = self.channel(Some(REQUEST_TIMEOUT)).await?;
         Ok(CompactTxStreamerClient::new(channel)
             .max_decoding_message_size(64 * 1024 * 1024)
             .accept_compressed(tonic::codec::CompressionEncoding::Gzip))
