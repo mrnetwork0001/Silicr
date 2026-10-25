@@ -32,6 +32,18 @@ Which lab rents how many H100s, and for how long, tells you what it is about to 
 
 Every screen in the terminal has a **Leak Inspector** toggle. It shows the same moment from four viewpoints side by side: the public chain, the Silicr relay, the provider and the buyer. It shows what each party actually received, taken from real data, not a diagram. See [THREAT_MODEL.md](THREAT_MODEL.md) for the full list of what is visible and what is not.
 
+## Proven on Zcash mainnet
+
+A complete deal ran on Zcash mainnet on 2026-10-25 (block 3,530,216): sealed RFQ → signed bid → accept and interval payment → job → result delivered and verified → signed close. Every transaction is a v6 shielded (Ironwood) transaction with no transparent, Sapling or legacy-Orchard parts; nothing on-chain reveals sender, recipient, amount or memo.
+
+| Step | Transaction |
+|---|---|
+| RFQ, sealed to one provider, padded to 4 outputs (budget undisclosed) | `244d1fe99760611c2f3ca8250f1dafbea9561eb1ada756a307376aab68132be6` |
+| Provider's signed bid, 0.0005 ZEC/h | `51dedcd4f220b7f3f16c8e8ee0c66c857d2295b444f47d55c21185424f5aa4e3` |
+| Accept + interval 0 payment, 0.00008334 ZEC | `0e22a1a447e9dd2f59dfedbe9b404e0b42cb5d2fd6ce6fa1eab6e7117f165364` |
+
+Bid to accept took nine seconds, because messages are acted on from the mempool. The 600-step job ran on the provider, its sealed result (2.5 kB) was decrypted by the buyer and its digest matched the provider's signed CLOSE. Total cost: 0.00008334 ZEC to the provider plus 0.00045 ZEC in fees. Look any txid up on a mainnet explorer (e.g. mainnet.zcashexplorer.app) to see the shielded-only shape.
+
 ## Verify it yourself
 
 ```bash
