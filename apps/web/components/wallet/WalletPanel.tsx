@@ -123,7 +123,9 @@ export function WalletPanel({ compact }: { compact?: boolean }) {
             {publicDemo ? (
               <Panel title="Withdraw" subtitle="Off in the public demo" actions={<Lock className="size-4 text-faint" aria-hidden />} bodyClassName="p-4">
                 <p className="text-xs leading-relaxed text-muted" id="withdraw-disabled">
-                  Public testnet demo: this is a shared wallet holding testnet coins only, so withdrawals are disabled. Run your own daemon (
+                  {wallet.network === 'main'
+                    ? 'Public mainnet demo: this is a shared, hard-capped wallet, so withdrawals are disabled. Run your own daemon ('
+                    : 'Public testnet demo: this is a shared wallet holding testnet coins only, so withdrawals are disabled. Run your own daemon ('}
                   <code className="font-mono">pnpm silicr demo</code>) to try withdrawing.
                 </p>
               </Panel>
