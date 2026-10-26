@@ -299,7 +299,7 @@ The rest is **self-reported by the buyer daemon's own record** and cannot be rea
 - **Only an explicit `--network main` touches real money.** Tests, `pnpm verify` and `silicr demo` never do; a mainnet daemon refuses to start without caps; `--public-demo` is refused on mainnet without `--allow-mainnet`; the sidecar refuses a server whose chain is not the one requested and a wallet directory created on the other network.
 - **The sandbox is Docker, and process mode says it is not one.** Docker mode runs `--network none --cap-drop ALL --security-opt no-new-privileges --read-only --pids-limit 1024` with CPU and memory limits, the bundle mounted read-only and a random container name (`dockerRunArgs()` in `packages/runner/src/docker.ts`). Process mode is a child process with the provider's user and is labelled "NOT a sandbox" in the status, the terminal and `pnpm verify`.
 - **Secrets never leave the owner's data dir.** Seeds, identity keys and state files are written atomically with mode 0600 in 0700 directories; signers keep the secret in a closure; guard errors never echo the refused input; nothing logs a seed, a key, memo plaintext or job contents. `pnpm verify` check 8 searches everything printed, the node logs, the observer feed and every relay file for 20 secrets as hex, base64 and raw bytes.
-- **Test coverage, measured on 2026-10-25:** `pnpm test` ran 912 tests across 8 packages, **891 passed, 21 skipped, 0 failed** (the skips are the 14 live-network tests behind `SILICR_TESTNET_LIVE` / `SILICR_MAINNET_LIVE` and 7 Docker probes that need a Docker daemon). `cargo test --release` in `zec-sidecar`: **22 passed, 0 failed**. `pnpm verify`: **PASS: 11/11 checks passed in 12.8 s**.
+- **Test coverage, measured on 2026-10-25:** `pnpm test` ran 914 tests across 8 packages, **893 passed, 21 skipped, 0 failed** (the skips are the 14 live-network tests behind `SILICR_TESTNET_LIVE` / `SILICR_MAINNET_LIVE` and 7 Docker probes that need a Docker daemon). `cargo test --release` in `zec-sidecar`: **22 passed, 0 failed**. `pnpm verify`: **PASS: 11/11 checks passed in 12.8 s**.
 
 ## What's real and what's simulated
 
@@ -371,7 +371,7 @@ Per-party settings (network, relay URL, port, light-wallet server, spend caps, r
 
 | Suite | Result |
 | --- | --- |
-| `pnpm test` (8 packages) | 912 tests: **891 passed, 21 skipped, 0 failed**. By package: protocol `325 passed`, zec `205 passed, 14 skipped` (live-network tests), engine `128 passed`, web `64 passed`, runner `52 passed, 7 skipped` (Docker probes), relay `46 passed`, cli `50 passed`, mcp `23 passed`. |
+| `pnpm test` (8 packages) | 914 tests: **893 passed, 21 skipped, 0 failed**. By package: protocol `325 passed`, zec `205 passed, 14 skipped` (live-network tests), engine `128 passed`, web `64 passed`, runner `52 passed, 7 skipped` (Docker probes), relay `46 passed`, cli `50 passed`, mcp `23 passed`. |
 | `cargo test --release` in `zec-sidecar` | `test result: ok. 22 passed; 0 failed; 0 ignored` |
 | `pnpm verify` | `PASS: 11/11 checks passed in 12.8 s` |
 

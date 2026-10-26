@@ -54,7 +54,7 @@ If a check fails, the line after its evidence starts with `FAILED:` and names th
 
 ## 4. The other one-liners (another five minutes)
 
-**The test suites.** `pnpm test` runs every package's Vitest suite (`pnpm --filter @silicr/<pkg> test` for one). Counts measured in this checkout on 2026-10-25: 912 tests across 8 packages, **891 passed, 21 skipped, 0 failed** (the skips are the 14 live-network tests behind `SILICR_TESTNET_LIVE` / `SILICR_MAINNET_LIVE` and the 7 Docker probes that need a Docker daemon):
+**The test suites.** `pnpm test` runs every package's Vitest suite (`pnpm --filter @silicr/<pkg> test` for one). Counts measured in this checkout on 2026-10-25: 914 tests across 8 packages, **893 passed, 21 skipped, 0 failed** (the skips are the 14 live-network tests behind `SILICR_TESTNET_LIVE` / `SILICR_MAINNET_LIVE` and the 7 Docker probes that need a Docker daemon):
 
 | Package | Tests | What they cover |
 |---|---|---|
