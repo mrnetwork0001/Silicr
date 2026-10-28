@@ -58,7 +58,7 @@ if [[ $MAIN == 0 ]]; then
   log "sync repo -> $HOST:/opt/silicr/src"
   rsync -az --delete \
     --exclude node_modules --exclude '.next*' --exclude target --exclude .silicr --exclude .git \
-    --exclude 'apps/landing/out' --exclude '*.log' --exclude .DS_Store --exclude 'tsconfig.tsbuildinfo' \
+    --exclude 'apps/landing/out' --exclude video --exclude '*.log' --exclude .DS_Store --exclude 'tsconfig.tsbuildinfo' \
     --exclude '**/wallets/' --exclude '*.seed' --exclude '.env*' \
     "$REPO/" "$HOST:/opt/silicr/src/"
   "${SSH[@]}" 'cp /opt/silicr/src/deploy/dockerignore /opt/silicr/src/.dockerignore'
@@ -120,7 +120,7 @@ else
   log "sync repo -> $HOST:/opt/silicr/src"
   rsync -az --delete \
     --exclude node_modules --exclude '.next*' --exclude target --exclude .silicr --exclude .git \
-    --exclude 'apps/landing/out' --exclude '*.log' --exclude .DS_Store --exclude 'tsconfig.tsbuildinfo' \
+    --exclude 'apps/landing/out' --exclude video --exclude '*.log' --exclude .DS_Store --exclude 'tsconfig.tsbuildinfo' \
     --exclude '**/wallets/' --exclude '*.seed' --exclude '.env*' \
     "$REPO/" "$HOST:/opt/silicr/src/"
   "${SSH[@]}" 'cp /opt/silicr/src/deploy/dockerignore /opt/silicr/src/.dockerignore'
